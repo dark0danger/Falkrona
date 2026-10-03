@@ -1,0 +1,16 @@
+{
+  "name": "social-media-graphic-design",
+  "canvas": { "preset": "portrait", "width": 1080, "height": 1350 },
+  "type_scale": { "brand": 32, "headline": 76, "cta": 32 },
+  "product_visual_required": true,
+  "composition": { "logo_corner": "language_start", "headline_zone": "upper_middle", "product_zone": "lower_half", "photo_full_bleed": false, "generated_scene_full_bleed": true },
+  "max_headline_words": 9,
+  "logo_source": "approved_workspace_asset",
+  "palette_source": "selected_logo_pixels",
+  "imagery_source": "authorized_image_app_complete_artwork",
+  "brand_consistency": ["palette", "typography", "logo_treatment", "image_character"],
+  "post_variety": ["visual_route", "scene", "camera", "composition", "visual_hook"],
+  "product_photo_role": "product_identity_only",
+  "design_reference_role": "optional_owner_uploaded_style_reference",
+  "allow_standalone_icons": false
+}

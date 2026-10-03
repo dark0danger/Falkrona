@@ -1,0 +1,34 @@
+.branding-view { max-width: 1050px; }
+.branding-questions { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin: 28px 0; }
+.branding-question label { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; font-weight: 600; }
+.step-number { display: inline-grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; background: #e9efeb; color: #23483f; border-radius: 50%; font-size: 13px; }
+.branding-question input, .branding-question textarea { box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid #cbd6cf; border-radius: 8px; font: inherit; background: white; }
+.brand-example { font-size: 13px; line-height: 1.6; }
+.style-examples { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.style-example { padding: 8px; border: 1px solid #d8ded9; border-radius: 8px; cursor: pointer; background: #fff; text-align: left; font: inherit; font-size: 12px; line-height: 1.5; }
+.style-example:hover { border-color: #417c65; }
+.style-miniature { height: 64px; display: block; background: #f0ece4; position: relative; overflow: hidden; margin-bottom: 8px; border-radius: 5px; }
+.style-miniature i { position: absolute; width: 18px; height: 24px; bottom: 8px; right: 16px; border-radius: 3px; background: #486358; }
+.style-miniature b { position: absolute; height: 5px; width: 42px; top: 14px; left: 10px; background: #486358; }
+.style-miniature em { position: absolute; height: 3px; width: 26px; top: 24px; left: 10px; background: #8b9b92; }
+.style-example-1 .style-miniature { background: #ffd268; }
+.style-example-1 .style-miniature i { background: #ef6782; transform: rotate(-12deg); border-radius: 50%; width: 28px; height: 28px; }
+.style-example-1 .style-miniature b { background: #7545ab; height: 9px; }
+.style-example-2 .style-miniature { background: #253c35; }
+.style-example-2 .style-miniature i { background: #baa36e; }
+.style-example-2 .style-miniature b, .style-example-2 .style-miniature em { background: #decfaa; }
+.branding-uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin: 24px 0; }
+.brand-upload { padding: 20px; border: 1px dashed #b7c9be; border-radius: 12px; background: #f9fbf8; }
+.brand-upload h3 { margin: 0; display: flex; justify-content: space-between; gap: 10px; }
+.brand-upload h3 span { font-size: 12px; font-weight: normal; color: #596b62; }
+.brand-upload label { display: flex; flex-direction: column; gap: 10px; font-weight: 500; }
+.brand-upload input { max-width: 100%; }
+.brand-logo-preview, .brand-reference-preview { display: block; width: 100%; height: 120px; object-fit: contain; border-radius: 6px; margin: 14px 0; }
+.brand-logo-preview { background-color: #fff; background-image: conic-gradient(#e7ebe7 25%, #fff 0 50%, #e7ebe7 0 75%, #fff 0); background-size: 20px 20px; }
+.branding-public { display: flex; align-items: start; gap: 10px; font-size: 14px; margin-bottom: 20px; }
+.branding-public input { margin-top: 3px; width: 18px; height: 18px; min-height: 18px; padding: 0; flex: 0 0 18px; accent-color: #b83b32; }
+.studio-fields input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; padding: 0; }
+.report-badge { color: #def176; font-size: 11px; font-weight: 600; }
+.engagement-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.engagement-table td, .engagement-table th { text-align: left; border-bottom: 1px solid #d8ded9; padding: 12px 10px; }
+@media (max-width: 740px) { .branding-questions, .branding-uploads { grid-template-columns: 1fr; } .style-examples { gap: 6px; } }

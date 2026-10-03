@@ -1,0 +1,20 @@
+{
+  "businesses": [
+    {
+      "name": "Nile Studio Cairo",
+      "owner_email": "owner.one@example.test",
+      "asset_name": "nile-studio-one.txt",
+      "asset_content": "workspace-one-asset",
+      "provider": "fixture_social",
+      "credential_value": "workspace-one-credential"
+    },
+    {
+      "name": "Nile Studios Cairo",
+      "owner_email": "owner.two@example.test",
+      "asset_name": "nile-studio-two.txt",
+      "asset_content": "workspace-two-asset",
+      "provider": "fixture_social",
+      "credential_value": "workspace-two-credential"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "fixture.artifact",
+    "dedupe_key": "phase1-fixture-artifact",
+    "payload": {
+      "label": "Sample data",
+      "workspace": "offline-demo"
+    }
+  }
+]

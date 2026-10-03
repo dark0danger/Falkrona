@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Falkrona Browser Helper",
+  "version": "0.1.5",
+  "description": "Send your authorized Falkrona brief to your image app and return the generated ad.",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html", "default_title": "Connect Falkrona"}
+}

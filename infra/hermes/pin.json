@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/NousResearch/hermes-agent.git",
+  "commit": "801a9022a742562a3c4578c0d8dd12cfd393fc47",
+  "observed_describe": "v0.21.4+canary.20260927T065737Z-654-g801a9022a7",
+  "resolved_at": "2026-09-28",
+  "runtime_python": "3.14",
+  "license": "MIT",
+  "integration": "private API server /v1/runs with bearer authentication",
+  "notes": "Use the source checkout's PM-managed runtime. Do not pip-install Hermes into BrandPilot's Python environment."
+}

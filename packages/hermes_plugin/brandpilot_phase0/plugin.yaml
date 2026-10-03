@@ -1,0 +1,5 @@
+name: brandpilot-phase0
+version: 0.1.0
+description: Minimal structured probe used to verify BrandPilot's Hermes extension path.
+provides_tools:
+  - brandpilot_phase0_probe

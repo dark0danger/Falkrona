@@ -1,0 +1,6 @@
+name: falkrona
+version: 0.1.0
+description: Reviewed Falkrona workspace tools for bounded Hermes agent runs.
+provides_tools:
+  - falkrona_get_brand_context
+  - falkrona_store_artifact
