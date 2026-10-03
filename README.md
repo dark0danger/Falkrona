@@ -55,7 +55,7 @@ Running a small brand already means handling products, customers, and sales. Fal
 | Instagram | Deferred. The UI keeps it separate and unavailable for publishing until verified. |
 | Local image renderer | Legacy/offline components remain in the repository; the live design workflow uses the image app. |
 
-This is a development preview. Browser image generation depends on a signed-in browser and the image service’s current controls and account limits. See [the browser integration details](docs/BROWSER_IMAGE_WORKFLOW.md) and [recent validation evidence](docs/evidence/drafting-recovery-2026-10-03.md).
+Browser image generation depends on a signed-in browser and the image service’s current controls and account limits. See [the browser integration details](docs/BROWSER_IMAGE_WORKFLOW.md) and [recent validation evidence](docs/evidence/drafting-recovery-2026-10-03.md).
 
 ## How it works
 
