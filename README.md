@@ -13,7 +13,7 @@
   <a href="#what-falkrona-does">Features</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="docs/SETUP.md">Complete setup</a> ·
-  <a href="docs/HACKATHON_LOCAL_SETUP.md">For judges</a> ·
+  <a href="docs/QUICKSTART.md">First campaign</a> ·
   <a href="docs/SETUP.md#troubleshooting">Troubleshooting</a>
 </p>
 
@@ -27,9 +27,11 @@
 
 ---
 
-## Why Falkrona?
+## Why Falkrona
 
-Running a small brand already means handling products, customers, and sales. Falkrona brings the weekly content workflow into one place: explain your brand, upload your own assets, draft a plan, review the finished work, and approve the schedule. The interface is built for brand owners who are neither engineers nor graphic designers.
+Small businesses already use Gemini and GPT to create social media ads. Without clear design principles or a consistent brand identity, those ads can look cheap or disconnected from one post to the next.
+
+Falkrona grew out of a graphic designer’s experience with that problem. It gives each campaign a shared palette, typography, logo treatment, and CTA style while developing a different creative idea for each post. The owner provides the brand details, reviews the finished work, and approves the schedule through one simple interface.
 
 ## What Falkrona does
 
@@ -48,12 +50,11 @@ Running a small brand already means handling products, customers, and sales. Fal
 
 | Integration | Status |
 | --- | --- |
-| Gemini API planning through pinned Hermes | Implemented and exercised in the live owner flow. |
-| ChatGPT website image generation | Exercised with automatic attachment, submission, and image return; helper **0.1.5**. |
-| Gemini website image generation | Adapter included; end-to-end account verification remains pending. |
-| Facebook Page connection and scheduled publishing | Implemented; the owner reports successful publication testing. Requires the configured Meta app, granted permissions, and running workers. |
-| Instagram | Deferred. The UI keeps it separate and unavailable for publishing until verified. |
-| Local image renderer | Legacy/offline components remain in the repository; the live design workflow uses the image app. |
+| Gemini API planning through Hermes | Available for weekly plans and individual design prompts. |
+| ChatGPT website image generation | Automatic attachment, submission, and image return through Browser Helper **0.1.5**. |
+| Gemini website image generation | Adapter included; live account validation is pending. |
+| Facebook Page connection and scheduled publishing | Available with a configured Meta app, Page permissions, and running workers. |
+| Instagram | Planned. Publishing is currently unavailable. |
 
 Browser image generation depends on a signed-in browser and the image service’s current controls and account limits. See [the browser integration details](docs/BROWSER_IMAGE_WORKFLOW.md) and [recent validation evidence](docs/evidence/drafting-recovery-2026-10-03.md).
 
@@ -70,23 +71,23 @@ flowchart LR
     G --> B
 ```
 
-Falkrona combines model reasoning with durable application state. Hermes runs the constrained Gemini planning turns; Falkrona supplies scoped brand context, validates structured output, stores jobs and artifacts, and manages retries and approval boundaries. The browser helper performs the authorized image-app actions. The delivery worker handles approved Facebook posts separately from model work.
+Gemini plans the campaign and writes a detailed design prompt for each post through Hermes. Falkrona validates the responses, saves progress, and manages generation jobs. The browser helper sends the prompts and assets to the connected image app and returns the finished artwork. A separate delivery worker publishes approved Facebook posts on schedule.
 
 A product photo supplies **product identity**, such as the bottle, packaging, and label. Its original background, props, and composition are explicitly discarded. Only the optional reference supplies style inspiration. Generating designs does not authorize publication.
 
 ## Start here
 
-**The supported walkthrough is Windows + PowerShell.** The guide covers fresh dependency installation, secrets, database migrations, Hermes, owner setup, the browser helper, Meta, startup/shutdown, and recovery. macOS/Linux wrappers and a complete application Docker image are not included; the existing Compose file runs PostgreSQL only.
+The setup guide targets **Windows + PowerShell**. It covers dependencies, the database, Gemini and Hermes, account creation, the browser helper, and Facebook. Docker Compose runs PostgreSQL; the API, frontend, and workers run separately.
 
 | You want to… | Follow this guide |
 | --- | --- |
 | Run Falkrona for the first time | [Complete setup, steps 1–7](docs/SETUP.md#1-prerequisites) |
 | Try real planning and designs | [Gemini](docs/SETUP.md#4-enable-gemini-planning), then [browser helper](docs/SETUP.md#8-connect-the-browser-helper) |
 | Connect Facebook and publish | [Meta setup, step 10](docs/SETUP.md#10-facebook-and-meta-setup) |
-| Review the hackathon project | [Judge walkthrough](docs/HACKATHON_LOCAL_SETUP.md) |
+| Create your first campaign | [First campaign walkthrough](docs/QUICKSTART.md) |
 | Fix a setup or generation issue | [Troubleshooting](docs/SETUP.md#troubleshooting) |
 
-> A fresh installation downloads application dependencies and a separate pinned Hermes runtime. It also needs provider/account setup. A five-minute installation on an unprepared computer is not guaranteed. No hosted demo or developer laptop is required for a local run.
+The first installation downloads application dependencies and a separate Hermes runtime. You will also need a Gemini API key and a signed-in image-app account for live generation.
 
 ### First-time local preparation
 
@@ -161,9 +162,14 @@ Next, [install and connect the browser helper](docs/SETUP.md#8-connect-the-brows
 4. **Generate:** the live draft flow prepares the Gemini plan and prompts, then runs the connected image app. Finished posts appear in the plan. Saved interrupted runs offer **Continue creating designs**.
 5. **Review:** inspect the artwork and captions. Regenerate, delete, or change future posting times before approval.
 6. **Approve plan & schedule:** approve the whole plan for the selected Facebook Page. Workers publish the approved posts at their Cairo times.
-7. **Results:** inspect collected engagement and weekly reports; unavailable permissions or data must not be treated as real measured results.
+7. **Results:** view engagement and weekly reports from the connected Page. New posts may need time to accumulate data.
 
-Keep the image-app browser open during generation. Keep the API and workers running while scheduled jobs need to execute. A local run executes on the judge’s computer; it does not rely on the submitter’s laptop.
+Keep the image-app browser open during generation. Keep the API, database, and workers running while scheduled jobs need to execute.
+
+## Planned improvements
+
+- Direct OpenAI or Gemini image-generation API integration, so artwork returns to Falkrona without a browser helper.
+- Instagram connection and publishing after integration testing.
 
 ## Architecture
 
@@ -182,7 +188,7 @@ The application uses Python **3.13**, Node **24** / npm **11**, and PostgreSQL *
 
 ## Validation
 
-Recent stored evidence records backend, UI, helper, and PostgreSQL checks, along with successful Arabic image-generation recovery. Those are historical results, not an automatically updated CI badge. See [3 October generation evidence](docs/evidence/drafting-recovery-2026-10-03.md), [design controls](docs/evidence/owner-design-controls-2026-10-03.md), [posting-date editing](docs/evidence/posting-date-editor-2026-10-03.md), and [scheduled publishing checks](docs/evidence/scheduled-publishing-2026-10-02.md).
+Tests cover backend services, the interface, browser-helper behavior, and PostgreSQL integration. Recorded test runs and live checks are documented in [generation recovery](docs/evidence/drafting-recovery-2026-10-03.md), [design controls](docs/evidence/owner-design-controls-2026-10-03.md), [posting-date editing](docs/evidence/posting-date-editor-2026-10-03.md), and [scheduled publishing](docs/evidence/scheduled-publishing-2026-10-02.md).
 
 ```powershell
 # Offline phase checks use a separate *_phase_gate PostgreSQL database
@@ -203,7 +209,7 @@ The optional [Hermes fixture probe](docs/SETUP.md#verification-and-development) 
 | Guide | Contents |
 | --- | --- |
 | [Complete setup](docs/SETUP.md) | Install everything, configure accounts, run services, connect Meta, and troubleshoot. |
-| [Judge walkthrough](docs/HACKATHON_LOCAL_SETUP.md) | A focused path through the project and what to demonstrate. |
+| [First campaign](docs/QUICKSTART.md) | Set up a brand, create designs, and approve a weekly plan. |
 | [Gemini planning](docs/GEMINI_CREATIVE_SETUP.md) | Provider configuration, asset roles, and planning boundaries. |
 | [Browser image workflow](docs/BROWSER_IMAGE_WORKFLOW.md) | Consent, handoff, image import, adapter limits, and recovery. |
 | [Browser helper](apps/browser-helper/README.md) | Installation, updating, connection, and account handling. |
@@ -219,4 +225,4 @@ Falkrona currently declares a **proprietary** license in `pyproject.toml`. Publi
 
 ---
 
-<p align="center"><strong>Falkrona — Your Brand’s Pilot</strong><br /><sub>Built for small brands. Presented for the Agents at Work hackathon by Untap and wesam.ai.</sub></p>
+<p align="center"><strong>Falkrona — Your Brand’s Pilot</strong><br /><sub>A consistent creative process for small businesses.</sub></p>

@@ -1,10 +1,10 @@
 # Complete setup guide
 
-[← README](../README.md) · [Judge walkthrough](HACKATHON_LOCAL_SETUP.md) · [Troubleshooting](#troubleshooting)
+[← README](../README.md) · [First campaign](QUICKSTART.md) · [Troubleshooting](#troubleshooting)
 
 This guide runs Falkrona on a Windows computer using PowerShell. It starts the actual API, frontend, PostgreSQL database, and workspace worker. Docker Compose currently supplies **PostgreSQL only**, not the entire app. Run every command below from the repository root unless a step says otherwise.
 
-Choose how far you want to test:
+Choose the features you want to use:
 
 | Path | Needed | Result |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ Choose how far you want to test:
 | Real planning and designs | Steps 1–9 | Gemini planning + browser image generation. Facebook login is not necessary to create a plan and designs. |
 | Facebook delivery | Add step 10 and the delivery worker | Approved posts delivered to a permitted Facebook Page. |
 
-Installation time depends on the initial dependency/runtime downloads, your computer, and external account setup. No universal five-minute estimate is made.
+The first installation downloads application dependencies and the Hermes runtime. You will also configure your own provider and image-app accounts.
 
 ## 1. Prerequisites
 
@@ -231,13 +231,13 @@ Drafting/generating does not publish anything to Facebook. You may download desi
 
 The **app operator** configures one Meta app, its ID/secret/version, callback, and permissions. A brand owner normally just connects Facebook, grants consent, and selects a Page. Creating a separate Meta app for every brand owner is not the intended product workflow.
 
-A development/unreviewed Meta app is not equivalent to a public approved integration. Testing access may be limited to accepted app-role users who also have the required Page access. Judges outside those roles cannot be promised immediate publishing. To serve ordinary external users, complete the relevant Meta review/access requirements. Adding permissions to a review request does **not** mean they have been approved.
+A Meta app in development may limit access to accepted app-role users with the required Page access. Connecting other users requires the relevant Meta review and permission approvals. Permissions listed in a review request remain pending until Meta approves them.
 
 Official references: [Meta app dashboard](https://developers.facebook.com/apps/) · [Pages API](https://developers.facebook.com/docs/pages-api/) · [Permissions](https://developers.facebook.com/docs/permissions/) · [App roles](https://developers.facebook.com/docs/development/build-and-test/app-roles/) · [App Review](https://developers.facebook.com/docs/app-review/) · [Facebook Login for Business](https://developers.facebook.com/docs/facebook-login/facebook-login-for-business/).
 
 ### Configure a local HTTPS callback
 
-For local testing, use HTTPS on the same origin as the Falkrona UI. A tunnel is needed **only while testing your local Meta flow**, not as a ten-day submission host.
+For local testing, use HTTPS on the same origin as the Falkrona UI. A development tunnel gives Meta a reachable HTTPS callback while Falkrona runs locally.
 
 1. Install [cloudflared](https://developers.cloudflare.com/tunnel/downloads/) and start a development tunnel to the **frontend port 5173**:
 
@@ -425,4 +425,4 @@ That probe exercises the pinned runtime through a loopback fixture provider; it 
 
 ## Hosting later
 
-Local judging needs no public deployment. If you later deploy, host the frontend, FastAPI service, persistent PostgreSQL, asset storage, and always-running workers, and configure one stable HTTPS origin. The Browser Helper still runs in each consenting owner’s browser. Static frontend hosting alone does not execute planning or scheduled publishing. Streamlit is not a drop-in host for the current React/FastAPI architecture.
+A hosted deployment needs the frontend, FastAPI service, persistent PostgreSQL, asset storage, and always-running workers with a stable HTTPS origin. The Browser Helper runs in each connected owner’s browser. Static frontend hosting alone does not execute planning or scheduled publishing. Streamlit is not a drop-in host for the current React/FastAPI architecture.
