@@ -31,8 +31,6 @@
 
 Running a small brand already means handling products, customers, and sales. Falkrona brings the weekly content workflow into one place: explain your brand, upload your own assets, draft a plan, review the finished work, and approve the schedule. The interface is built for brand owners who are neither engineers nor graphic designers.
 
-Originally named **BrandPilot**, the project now uses **Falkrona**. Some internal package names, database names, and `BRANDPILOT_*` environment variables retain the original name for compatibility.
-
 ## What Falkrona does
 
 | Capability | The owner experience |
