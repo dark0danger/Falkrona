@@ -175,7 +175,7 @@ class DirectionTests(unittest.TestCase):
         import zipfile
         with zipfile.ZipFile(BytesIO(download.content)) as helper:
             manifest = json.loads(helper.read("manifest.json"))
-            self.assertEqual(manifest["version"], "0.1.5")
+            self.assertEqual(manifest["version"], "0.1.6")
             self.assertIn("provider-dom.js", helper.namelist())
             self.assertNotIn("cookies", manifest["permissions"])
             self.assertNotIn("host_permissions", manifest)

@@ -2,7 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-function fixture(granted = true, provider = 'gemini') {
+function fixture(granted = true, provider = 'gemini', tabStatus = 'complete') {
   let listener, opened = 0;
   const sent = [], created = [];
   let closed = false;
@@ -11,8 +11,8 @@ function fixture(granted = true, provider = 'gemini') {
   const registered = [];
   const store = data => ({get: async key => ({[key]: structuredClone(data[key])}), set: async values => Object.assign(data, structuredClone(values))});
   const chrome = {storage: {local: store(local), session: store(session)},
-    runtime: {onMessage: {addListener: fn => {listener = fn;}}},
-    tabs: {create: async options => {created.push(options); closed=false; return {id: ++opened + 100};}, get: async () => {if(closed)throw new Error('No tab');return {status: 'complete'};}, sendMessage: async (tabId, message) => {sent.push({tabId, message}); return {accepted: true};}},
+    runtime: {getManifest:()=>({version:'0.1.6'}),onMessage: {addListener: fn => {listener = fn;}}},
+    tabs: {create: async options => {created.push(options); closed=false; return {id: ++opened + 100};}, get: async () => {if(closed)throw new Error('No tab');return {status: tabStatus};}, sendMessage: async (tabId, message) => {sent.push({tabId, message}); return {accepted: true};}},
     permissions: {contains: async () => granted},
     scripting: {executeScript: async () => [], getRegisteredContentScripts:async()=>registered,
       registerContentScripts:async scripts=>registered.push(...scripts)}};
@@ -29,6 +29,16 @@ test('helper rejects unconnected origins and subframes', async () => {
   assert.ok((await f.call({action: 'status'}, {...f.owner, url: 'https://attacker.example/'})).error);
   assert.ok((await f.call({action: 'status'}, {...f.owner, frameId: 2})).error);
   assert.equal((await f.call({action: 'status'})).connected, true);
+});
+
+test('starts in a foreground tab and receives commands before full page load', async () => {
+  const f=fixture(true,'chatgpt','loading');
+  await f.call({action:'start',packet:f.packet});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.created[0].active,true);
+  assert.equal(f.sent.length,1);
+  assert.equal(f.sent[0].message.action,'generate');
+  assert.equal((await f.call({action:'status'})).helper_version,'0.1.6');
 });
 test('one run opens one fresh tab and never resubmits after an interruption', async () => {
   const f = fixture();
@@ -95,7 +105,7 @@ test('extension startup restores its bridge only with an existing owner-origin g
 
 test('resume after extension reload cannot create another request when job tracking is missing', async () => {
   const f = fixture();
-  assert.equal((await f.call({action: 'status'})).helper_version, '0.1.5');
+  assert.equal((await f.call({action: 'status'})).helper_version, '0.1.6');
   const result = await f.call({action: 'start', packet: f.packet, resumeOnly: true});
   assert.equal(result.stage, 'paused');
   assert.match(result.error, /nothing was resent/);

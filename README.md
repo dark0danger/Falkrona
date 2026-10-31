@@ -13,6 +13,7 @@
   <a href="#what-falkrona-does">Features</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="docs/SETUP.md">Complete setup</a> ·
+  <a href="docs/DEPLOYMENT.md">Deploy online</a> ·
   <a href="docs/QUICKSTART.md">First campaign</a> ·
   <a href="docs/SETUP.md#troubleshooting">Troubleshooting</a>
 </p>
@@ -51,7 +52,7 @@ Falkrona grew out of a graphic designer’s experience with that problem. It giv
 | Integration | Status |
 | --- | --- |
 | Gemini API planning through Hermes | Available for weekly plans and individual design prompts. |
-| ChatGPT website image generation | Automatic attachment, submission, and image return through Browser Helper **0.1.5**. |
+| ChatGPT website image generation | Automatic attachment, submission, and image return through Browser Helper **0.1.6**. |
 | Gemini website image generation | Adapter included; live account validation is pending. |
 | Facebook Page connection and scheduled publishing | Available with a configured Meta app, Page permissions, and running workers. |
 | Instagram | Planned. Publishing is currently unavailable. |
@@ -209,6 +210,7 @@ The optional [Hermes fixture probe](docs/SETUP.md#verification-and-development) 
 | Guide | Contents |
 | --- | --- |
 | [Complete setup](docs/SETUP.md) | Install everything, configure accounts, run services, connect Meta, and troubleshoot. |
+| [Railway and Vercel deployment](docs/DEPLOYMENT.md) | Host the API, workers, database, assets and frontend. |
 | [First campaign](docs/QUICKSTART.md) | Set up a brand, create designs, and approve a weekly plan. |
 | [Gemini planning](docs/GEMINI_CREATIVE_SETUP.md) | Provider configuration, asset roles, and planning boundaries. |
 | [Browser image workflow](docs/BROWSER_IMAGE_WORKFLOW.md) | Consent, handoff, image import, adapter limits, and recovery. |

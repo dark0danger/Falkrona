@@ -65,7 +65,7 @@ async function route(message, sender) {
     return {ok: true};
   }
   if (!connection || sender.frameId !== 0 || !sender.tab || new URL(sender.url).origin !== connection.origin) throw new Error("Connect this Falkrona page using the helper button first.");
-  if (message.action === "status") return {connected: true, provider: connection.provider, helper_version: "0.1.5", account_verified: false};
+  if (message.action === "status") return {connected: true, provider: connection.provider, helper_version: chrome.runtime.getManifest().version, account_verified: false};
   const job = await readJob(message.runId || message.packet?.run_id);
   if (message.action === "poll") {
     if (!job || job.runId !== message.runId || job.ownerTab !== sender.tab.id || job.origin !== connection.origin) return {stage: "unavailable"};
@@ -106,7 +106,8 @@ async function route(message, sender) {
   if (starting || (activeJob && !["complete", "paused"].includes(activeJob.stage) && Date.parse(activeJob.expiresAt) > Date.now())) throw new Error("Finish the current image first.");
   starting = true;
   try {
-    const tab = await chrome.tabs.create({url: packet.url, active: false});
+    // An active tab avoids background-page throttling during composer hydration.
+    const tab = await chrome.tabs.create({url: packet.url, active: true});
     const next = {runId: packet.run_id, provider: packet.provider, origin: connection.origin,
       ownerTab: sender.tab.id, providerTab: tab.id, expiresAt: packet.expires_at, stage: "opening", submitted: false};
     await saveJob(next);
@@ -118,12 +119,24 @@ async function route(message, sender) {
   } finally { starting = false; }
 }
 async function launch(tabId, packet, resume = false, observeOnly = false) {
-  // Short bounded load checks, then a content script owns the long generation wait.
-  for (let attempt = 0; attempt < 30; attempt++) {
+  // Start when the provider document can receive messages, without waiting for
+  // unrelated page resources. The adapter itself waits for hydrated controls.
+  for (let attempt = 0; attempt < 60; attempt++) {
     const tab = await chrome.tabs.get(tabId);
-    if (tab.status === "complete") break;
-    await new Promise(resolve => setTimeout(resolve, 500));
+    if (tab.url && new URL(tab.url).origin !== sites[packet.provider]) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      continue;
+    }
+    try {
+      await chrome.scripting.executeScript({target: {tabId}, files: ["provider-dom.js", "provider.js"]});
+      const accepted = await chrome.tabs.sendMessage(tabId, {action: resume ? "resume" : "generate", packet, observeOnly});
+      if (accepted?.accepted) return;
+      // A running adapter must never receive a second generation command.
+      throw new Error("The image adapter is already busy. Resume the saved request.");
+    } catch (error) {
+      if (!/Receiving end does not exist|Could not establish connection|No frame with id|Frame.*removed|document.*unloaded/i.test(error.message)) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
-  await chrome.scripting.executeScript({target: {tabId}, files: ["provider-dom.js", "provider.js"]});
-  await chrome.tabs.sendMessage(tabId, {action: resume ? "resume" : "generate", packet, observeOnly});
+  throw new Error("The image app did not become ready. Resume this saved request.");
 }

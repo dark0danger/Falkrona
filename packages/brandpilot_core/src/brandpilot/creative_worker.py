@@ -41,8 +41,10 @@ class HermesCreativeExecutor:
         python = self.python_path
         if not python:
             install_key = hashlib.sha256(str(checkout.resolve()).encode()).hexdigest()[:16]
-            facts = root / ".runtime/hermes/spike-bootstrap/installs" / install_key / "facts.json"
-            if not facts.is_file():
+            facts = next((root / ".runtime/hermes" / home / "installs" / install_key / "facts.json"
+                          for home in ("bootstrap", "spike-bootstrap")
+                          if (root / ".runtime/hermes" / home / "installs" / install_key / "facts.json").is_file()), None)
+            if facts is None:
                 raise Phase4Error("runtime_unavailable", "Prepare Hermes or configure BRANDPILOT_HERMES_PYTHON.")
             environment = Path(json.loads(facts.read_text(encoding="utf-8"))["packages"]["venv"]["environment"])
             python = str(environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))

@@ -6,6 +6,19 @@ from brandpilot.settings import AppSettings, ConfigurationError
 
 
 class AppSettingsTests(unittest.TestCase):
+    def test_managed_postgres_urls_select_installed_driver(self):
+        values = {
+            "BRANDPILOT_STORAGE_ROOT": ".runtime/storage",
+            "BRANDPILOT_APP_SECRET_KEY": "a" * 32,
+            "BRANDPILOT_CREDENTIAL_ENCRYPTION_KEY": base64.urlsafe_b64encode(b"b" * 32).decode(),
+            "BRANDPILOT_OWNER_SETUP_TOKEN": "setup-token-with-20-characters",
+        }
+        for scheme in ("postgres", "postgresql", "postgresql+psycopg"):
+            with self.subTest(scheme=scheme):
+                values["BRANDPILOT_DATABASE_URL"] = scheme + "://user:pass@db:5432/app?sslmode=require"
+                self.assertEqual(AppSettings.from_env(values).database_url,
+                                 "postgresql+psycopg://user:pass@db:5432/app?sslmode=require")
+
     def test_https_meta_callback_requires_secure_cookies(self):
         values = {
             "BRANDPILOT_DATABASE_URL": "sqlite+pysqlite:///:memory:",

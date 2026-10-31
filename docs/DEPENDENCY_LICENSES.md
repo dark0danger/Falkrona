@@ -1,6 +1,6 @@
 # Dependency License Inventory
 
-Generated on 2026-10-01 from the Phase 1 locked environment.
+Generated on 2026-10-31 from the Phase 1 locked environment.
 
 This inventory records package-declared metadata. `NOT DECLARED` requires manual
 review before distribution. Lockfiles remain authoritative for hashes and exact

@@ -65,6 +65,10 @@ class AppSettings:
         database_url = values.get("BRANDPILOT_DATABASE_URL", "").strip()
         if not database_url:
             raise ConfigurationError("BRANDPILOT_DATABASE_URL is required")
+        # Managed PostgreSQL providers supply the generic URL scheme. Select the
+        # installed psycopg driver rather than SQLAlchemy's psycopg2 default.
+        if database_url.startswith(("postgres://", "postgresql://")):
+            database_url = "postgresql+psycopg://" + database_url.split("://", 1)[1]
         storage_value = values.get("BRANDPILOT_STORAGE_ROOT", "").strip()
         if not storage_value:
             raise ConfigurationError("BRANDPILOT_STORAGE_ROOT is required")

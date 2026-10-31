@@ -425,4 +425,4 @@ That probe exercises the pinned runtime through a loopback fixture provider; it 
 
 ## Hosting later
 
-A hosted deployment needs the frontend, FastAPI service, persistent PostgreSQL, asset storage, and always-running workers with a stable HTTPS origin. The Browser Helper runs in each connected owner’s browser. Static frontend hosting alone does not execute planning or scheduled publishing. Streamlit is not a drop-in host for the current React/FastAPI architecture.
+Follow the [Railway backend and Vercel frontend guide](DEPLOYMENT.md) for the included container and routing configuration. The backend runs the API and workspace workers together with persistent asset storage. The Browser Helper runs in each connected owner’s browser during image generation. Scheduled publishing runs on Railway after approval.
