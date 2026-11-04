@@ -155,14 +155,19 @@ if (!globalThis.falkronaProviderV3Installed) {
     const end = Math.min(Date.parse(packet.expires_at), Date.now() + 18 * 60000);
     const observationStarted = Date.now();
     let checkedFresh = false;
+    let confirmedSubmission = false;
     let stableImages = "", stableSince = 0;
     while (Date.now() < end) {
       await new Promise(r => setTimeout(r, 2000));
-      await progress("submitted");
+      await progress(confirmedSubmission ? "generating" : "submitted");
       const users = packet.provider === "chatgpt" ? messages("user") : [...document.querySelectorAll("user-query")];
       // An image is accepted only after the actual request appears in the transcript.
       if (users.length > 1) pause("This chat has additional messages. Choose the correct image manually.");
       if (users.length !== 1 || !promptMatches(users[0], packet.prompt)) continue;
+      if (!confirmedSubmission) {
+        confirmedSubmission = true;
+        await progress("generating");
+      }
       const responses = packet.provider === "chatgpt" ? messages("assistant") : [...document.querySelectorAll(responseSelector)];
       if (responses.length > 1) pause("More than one response appeared. Choose the correct image manually in Studio.");
       const response = responses[0];

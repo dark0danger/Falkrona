@@ -19,7 +19,7 @@ from tests.integration import test_phase8_studio_api as studio_fixture
 from tests.integration.branding_fixture import complete_branding
 
 
-DIRECTION = {"design_idea": "A natural product scene with upper text space", "image_prompt": "Preserve the real bottle and label. Soft natural light; complete ad with exact logo, headline and CTA.",
+DIRECTION = {"design_idea": "A natural product scene with upper text space", "image_prompt": "Preserve the real bottle and label. Soft natural light; complete ad with exact logo. Headline: Fresh coffee. Good company. CTA: Find your favorite.",
              "layout": "editorial", "headline_align": "start", "missing_information": [],
              "headline": "Fresh coffee. Good company.", "cta": "Find your favorite", "caption": "Discover our coffee bag.", "language": "en",
              "product_observation": {"identity": "The real coffee bag, sealed shape and printed label.",
@@ -134,7 +134,7 @@ class DirectionTests(unittest.TestCase):
         self.assertEqual(saved["checkpoint"]["stage"], "awaiting_image_app")
         store = JobStore(self.sessions, workspace_id=self.workspace)
         self.assertFalse(Worker("replacement", store, self.app.state.storage).process_one())
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         self.assertEqual(self.client.get(self.design_path).json()["current"]["id"], self.first["id"])
 
     def test_live_regeneration_cannot_bypass_scene_generation(self):
@@ -204,8 +204,8 @@ class DirectionTests(unittest.TestCase):
         self.assertEqual(stale.json()["detail"]["code"], "direction_stale")
         self.assertEqual(self.client.get(self.design_path).json()["current"]["id"], self.first["id"])
 
-    def test_browser_direction_needs_only_one_gemini_call(self):
-        self.app.state.phase4._max_model_calls = 1
+    def test_browser_direction_uses_two_bounded_calls(self):
+        self.app.state.phase4._max_model_calls = 2
         run = self.client.post(self.path, headers=self.csrf, json=self.inputs).json()
         self.execute(lambda *_: {"text": json.dumps(DIRECTION), "model_calls": 1})
         saved = self.client.get(f"{self.base}/agent-runs/{run['id']}").json()

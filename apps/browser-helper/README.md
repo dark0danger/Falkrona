@@ -1,4 +1,4 @@
-# Falkrona Browser Helper · 0.1.5
+# Falkrona Browser Helper · 0.1.7
 
 [Full setup guide](../../docs/SETUP.md#8-connect-the-browser-helper) · [Image workflow](../../docs/BROWSER_IMAGE_WORKFLOW.md)
 
@@ -11,13 +11,15 @@ A Chrome/Edge Manifest V3 extension that sends the authorized Falkrona prompt an
 3. Select this exact folder: `apps/browser-helper`. It directly contains `manifest.json`. You do not need a separate ZIP.
 4. Open the active Falkrona page in that browser, click **Falkrona Browser Helper**, select **ChatGPT** or **Gemini**, then click **Allow and connect**.
 5. Allow the selected Falkrona/image-app site grants and sign in directly to the selected image app.
-6. Return to Falkrona, complete Branding/Products, and click **Draft a plan** in Content plan. The live workflow starts image generation automatically; saved interrupted batches offer **Continue creating designs**.
+6. Return to Falkrona, complete Brand and Products, and click **Create my week** in Content plan. Image generation starts automatically. Interrupted batches offer **Continue creating designs**.
 
 You do not normally press Send yourself. The helper confirms attachments and submits the saved prompt, waits for a completed stable image, and imports it. Generation is separate from the owner’s later whole-plan publishing approval.
 
 ## Update or change origin
 
-After updating files, click **Reload** on the extension’s card, then refresh Falkrona. The loaded folder must be the one you updated. The manifest currently reports **0.1.5**.
+After updating files, click **Reload** on the extension’s card, then refresh Falkrona. The loaded folder must be the one you updated. The manifest currently reports **0.1.7**.
+
+Accounts now includes an image-connection check. Content plan verifies the helper before starting a paid/model drafting request. Once the matching prompt appears in the image conversation, the helper returns to Falkrona if its image tab is still active. It leaves unrelated tabs alone. If a request pauses, **Open image request** opens that same tab without resending. Browser connection readiness does not verify provider login, quota or generation time.
 
 Reconnect with **Allow and connect** after switching the Falkrona origin, tunnel URL, or selected image service. Keep the generation browser open. Disconnect in the popup to remove the selected grants and stop helper work.
 

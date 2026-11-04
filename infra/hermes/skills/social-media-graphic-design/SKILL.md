@@ -39,6 +39,24 @@ For example, a skincare product-group still life and a person holding the produc
 
 ## Execution and application boundary
 
+Hermes runs two bounded stages for each new weekly plan and creative direction: draft,
+then editorial review. Gemini is the underlying model, not a substitute for this workflow.
+The editor compares headline alternatives privately and returns only the strongest final
+copy. Write a concrete customer moment or a supported benefit; avoid generic slogans,
+forced rhymes, empty superlatives and engagement bait. Arabic must sound naturally written,
+with no literal translation or invented dialect. Keep the final headline and CTA verbatim
+in the image prompt. The editor must preserve the schedule, factual sources, product
+identity, distinct scene assignment and shared CTA treatment. A failed review stops the
+handoff; it never silently falls back to an unchecked draft.
+
+Use only workspace-scoped memory supplied by Falkrona: owner-approved writing/design
+preferences, local feedback for this post and recent owner-approved copy examples.
+Examples teach voice, not new facts, offers or evidence of higher engagement. New
+preferences apply to future generation; they do not change approved or scheduled posts.
+Never learn from another brand, treat rejected drafts as successful, train yourself on
+unconfirmed claims or write a global memory file. Memory is reversible database context,
+not model retraining. Do not claim visual inspection based on the text review.
+
 Gemini inside Hermes plans; the owner's authorized ChatGPT or Gemini Apps browser session generates the COMPLETE ad, including exact headline, CTA and original logo. Return a self-contained image_prompt with the assigned concept, scene, focal action, product placement, framing, lighting, brand palette, typography, exact copy and language. Include the role distinction and source-scene exclusions. Do not return local geometry, segmentation recipes, or a photo-with-text fallback.
 
 One Draft a plan action asks Gemini for the week and automatically prepares prompts and complete images for all posts using the owner's chosen language, product and consented image app. Show finished designs, exact captions, destination and Cairo posting times for one whole-plan review. No individual approval is required before generation. The helper uses provider-specific asset consent, attaches role-named images, sends once and imports actual complete pixels without extra text/logo overlays. Preserve successful posts when another pauses. Generation does not authorize publishing. Only the owner's explicit Approve plan & schedule action authorizes scheduled Facebook delivery of those exact revisions. Hermes must never call publication tools or approve on the owner's behalf.

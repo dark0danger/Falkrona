@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><title>Connect Falkrona</title>
-<style>body{font:15px system-ui;width:320px;padding:18px;color:#172d2b}button,select{padding:10px;width:100%;margin:8px 0}button{background:#172d2b;color:white;border:0;border-radius:8px}p{line-height:1.5}</style>
-<h2>Falkrona image helper</h2><p>Open Falkrona in this browser, then connect. Your passwords and sign-in cookies stay in your browser.</p>
-<label>Image app<select id="provider"><option value="gemini">Gemini</option><option value="chatgpt">ChatGPT</option></select></label>
-<p>The helper can attach your brand images, send your prepared prompt and read the generated result on the selected app. It only runs when you start a design.</p>
-<button id="connect">Allow and connect</button><button id="disconnect">Disconnect helper</button><p id="status" role="status"></p><script src="popup.js"></script></html>
+<style>*{box-sizing:border-box}body{font:14px system-ui;width:340px;margin:0;padding:24px;color:#151536;background:#f4f2fc}h2{margin:0 0 8px;font-size:23px}button,select{font:inherit;padding:12px;width:100%;margin:8px 0;border-radius:10px}select{border:1px solid #d6d3e9;background:white}button{background:#6e32ed;color:white;border:0;font-weight:600;cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #a77aff;outline-offset:2px}#disconnect{background:transparent;color:#555780;border:1px solid #d6d3e9}p{line-height:1.55;color:#555780}#status:empty{display:none}</style>
+<h2>Connect image creation</h2><p>Keep Falkrona open in this tab. Connect once, then create posts from the app.</p>
+<label>Image app<select id="provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option></select></label>
+<p>Allow Falkrona to upload your chosen images, send the design prompt and return the result. Your sign-in stays in this browser.</p>
+<button id="connect">Allow and connect</button><button id="disconnect">Disconnect</button><p id="status" role="status"></p><script src="popup.js"></script></html>

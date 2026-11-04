@@ -26,8 +26,8 @@ function AssetPreview({ workspaceId, id, logo }: { workspaceId: string; id: stri
   return url ? <img className={logo ? "brand-logo-preview" : "brand-reference-preview"} src={url} alt={logo ? "Your uploaded brand logo" : "Your uploaded design reference"} /> : null;
 }
 
-export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan }: {
-  workspaceId: string; csrf: string; canEdit: boolean; onSaved: (branding: Branding) => void; openPlan: () => void;
+export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan, nextLabel }: {
+  workspaceId: string; csrf: string; canEdit: boolean; onSaved: (branding: Branding) => void; openPlan: () => void; nextLabel: string;
 }) {
   const [data, setData] = useState<Branding | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -79,10 +79,9 @@ export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan }: 
   }
   const complete = Boolean(logo && ["brand_name", "category", "audience", "style"].every((key) => answers[key]?.trim()));
   return <section className="queue branding-view" aria-labelledby="branding-title">
-    <div className="section-heading"><div><p className="eyebrow">START WITH YOUR BRAND</p><h2 id="branding-title">Let's get to know your brand</h2></div><span>{saved ? "Ready to create" : "A few simple steps"}</span></div>
-    <p className="muted">Answer four short questions and add your logo. Falkrona will use these details every time it creates a Facebook or Instagram post.</p>
+    <div className="section-heading"><div><h2 id="branding-title">Brand essentials</h2></div><span>{saved ? "Ready to create" : "A few simple steps"}</span></div>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {!data?.survey && <p role="status">{data?.survey_status === "failed" ? "Your brand questions couldn't be prepared." : "Preparing your brand questions with Gemini…"}</p>}
+    {!data?.survey && <p role="status">{data?.survey_status === "failed" ? "Your brand questions couldn't be prepared." : "Preparing your brand questions…"}</p>}
     {data?.survey_status === "failed" && canEdit && <button className="icon-button" type="button" onClick={() => {
       void request<Branding>(`${base}/survey`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: JSON.stringify({ retry_failed: true }) }).then(setData).catch((reason) => setError(String(reason)));
     }}>Try preparing questions again</button>}
@@ -91,16 +90,16 @@ export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan }: 
         <label htmlFor={`brand-${question.key}`}><span className="step-number">{index + 1}</span>{question.question}</label>
         {question.key === "brand_name" ? <input id={`brand-${question.key}`} required maxLength={200} disabled={!canEdit || Boolean(busy)} value={answers[question.key] ?? ""} onChange={(event) => { setSaved(false); setAnswers({ ...answers, [question.key]: event.target.value }); }} />
           : <textarea id={`brand-${question.key}`} required maxLength={1000} rows={2} disabled={!canEdit || Boolean(busy)} value={answers[question.key] ?? ""} onChange={(event) => { setSaved(false); setAnswers({ ...answers, [question.key]: event.target.value }); }} />}
-        {question.key === "style" ? <div className="style-examples">{question.examples.map((example, i) => <button type="button" className={`style-example style-example-${i}`} key={example} disabled={!canEdit || Boolean(busy)} onClick={() => { setSaved(false); setAnswers({ ...answers, style: example }); }}><span className="style-miniature" aria-hidden="true"><i /><b /><em /></span><span>{example}</span></button>)}</div>
+        {question.key === "style" ? <div className="style-examples">{question.examples.map((example, i) => <button type="button" className={`style-example style-example-${i}`} key={example} aria-pressed={answers.style === example} disabled={!canEdit || Boolean(busy)} onClick={() => { setSaved(false); setAnswers({ ...answers, style: example }); }}><span className="style-miniature" aria-hidden="true"><i /><b /><em /></span><span>{example}</span></button>)}</div>
           : <p className="muted brand-example">For example: {question.examples.join(" · ")}</p>}
       </div>)}</div>
       <div className="branding-uploads">
-        <div className="brand-upload"><h3>Your logo <span>Required</span></h3><p className="muted">PNG or WebP with a transparent background. The checkerboard shows transparent space.</p><AssetPreview workspaceId={workspaceId} id={logo} logo /><label>{logo ? "Replace logo" : "Upload your logo"}<input aria-label="Upload transparent brand logo" type="file" accept=".png,.webp" disabled={!canEdit || Boolean(busy)} onChange={(event) => { void upload("logo", event.target.files?.[0]); event.target.value = ""; }} /></label></div>
-        <div className="brand-upload"><h3>A design you like <span>Optional</span></h3><p className="muted">Upload one example for inspiration. Your own logo and product will stay in the final post.</p><AssetPreview workspaceId={workspaceId} id={reference} logo={false} /><label>{reference ? "Replace example" : "Add an example"}<input aria-label="Upload optional design reference" type="file" accept=".png,.jpg,.jpeg,.webp" disabled={!canEdit || Boolean(busy)} onChange={(event) => { void upload("reference", event.target.files?.[0]); event.target.value = ""; }} /></label>{reference && canEdit && <button type="button" className="icon-button" disabled={Boolean(busy)} onClick={() => { setReference(null); setSaved(false); }}>Remove example</button>}</div>
+        <div className="brand-upload"><h3>Your logo <span>Required</span></h3><p className="muted">Transparent PNG or WebP.</p><AssetPreview workspaceId={workspaceId} id={logo} logo /><label>{logo ? "Replace logo" : "Upload your logo"}<input aria-label="Upload transparent brand logo" type="file" accept=".png,.webp" disabled={!canEdit || Boolean(busy)} onChange={(event) => { void upload("logo", event.target.files?.[0]); event.target.value = ""; }} /></label></div>
+        <div className="brand-upload"><h3>A design you like <span>Optional</span></h3><p className="muted">An example of the style you like.</p><AssetPreview workspaceId={workspaceId} id={reference} logo={false} /><label>{reference ? "Replace example" : "Add an example"}<input aria-label="Upload optional design reference" type="file" accept=".png,.jpg,.jpeg,.webp" disabled={!canEdit || Boolean(busy)} onChange={(event) => { void upload("reference", event.target.files?.[0]); event.target.value = ""; }} /></label>{reference && canEdit && <button type="button" className="icon-button" disabled={Boolean(busy)} onClick={() => { setReference(null); setSaved(false); }}>Remove example</button>}</div>
       </div>
       <label className="branding-public"><input type="checkbox" checked={publicContext} disabled={!canEdit || Boolean(busy)} onChange={(event) => { setPublicContext(event.target.checked); setSaved(false); }} /> These brand details can be shared publicly. Don't include private customer information.</label>
-      <div className="studio-actions">{canEdit && <button className="primary" type="submit" disabled={!complete || Boolean(busy)}>{busy ? "Saving…" : "Save my brand"}</button>}{saved && <button className="icon-button" type="button" onClick={openPlan}>Plan my posts →</button>}</div>
-      {!saved && <p className="muted">Save your answers and transparent logo to start creating.</p>}
+      <div className="brand-save studio-actions">{saved ? <button className="primary" type="button" onClick={openPlan}>{nextLabel} →</button> : canEdit && <button className="primary" type="submit" disabled={!complete || Boolean(busy)}>{busy ? "Saving…" : "Save my brand"}</button>}</div>
+
       {data.survey_source === "offline_starter" && <p className="muted">Offline preview: these are starter questions. Connected mode prepares the questions with Gemini.</p>}
     </form>}
   </section>;

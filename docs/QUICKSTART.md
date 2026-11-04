@@ -21,7 +21,7 @@ The logo and brand survey define your identity. The product photo shows what the
 
 1. Open **Content plan** and choose a future week.
 2. Select a product photo and choose Arabic or English for the designs.
-3. Allow the selected services to use your brand inputs, then click **Draft a plan**.
+3. Allow the selected services to use your brand inputs, then click **Create my week**.
 
 Gemini creates the weekly plan and a detailed prompt for each post. The connected image app generates the designs and returns them to Falkrona. Keep its browser tab open during generation.
 

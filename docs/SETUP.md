@@ -206,7 +206,7 @@ The extension is included in the repository at `apps/browser-helper`. You do not
 6. Allow the requested access for that Falkrona origin and selected image service. Sign in directly at [ChatGPT](https://chatgpt.com/) or [Gemini](https://gemini.google.com/).
 7. Return to Falkrona. The connection should be reported before you draft a live generation batch.
 
-The included manifest is version **0.1.5**. After updating extension files, click **Reload** on its Extensions card and refresh Falkrona. Extracting a ZIP by itself does not activate a new extension version.
+The included manifest is version **0.1.7**. After updating extension files, click **Reload** on its Extensions card and refresh Falkrona. Use **Accounts → Image creation → Check connection** to confirm Falkrona can reach the helper.
 
 ChatGPT attachment, send, and return were exercised in the owner’s account. The Gemini website adapter remains pending end-to-end verification. Availability and image quotas depend on the selected account; signing in does not guarantee unlimited generation.
 
@@ -219,7 +219,7 @@ If you switch origin, including a new HTTPS tunnel address, open that Falkrona p
 1. Open **Branding**. Complete the survey for name, business/category, audience, and preferred style. Upload a logo with a transparent background, optionally upload a design reference, and save.
 2. Open **Products**. Upload a real product image and add factual details. Product photos supply product identity; they must not dictate the ad’s background or composition.
 3. Open **Content plan**. Select a current/future week with enough future slots, choose a product photo, select **Arabic** or **English**, and authorize sharing the displayed brand inputs with Gemini and the selected image service.
-4. For the first test, use **one post**. Click **Draft a plan**. The live workflow drafts the weekly strategy and automatically starts detailed prompts and image generation through the connected helper.
+4. For the first test, use **one post**. Click **Create my week**. Falkrona checks the connection, drafts the weekly strategy, and starts image generation through the connected helper.
 5. Inspect the finished image, caption, and future Cairo time. Use **Regenerate**, **Delete**, or **Change posting date** while the plan is still an unscheduled draft.
 6. Try a small multi-post batch to see different ideas with shared brand styling and CTA treatment. Do not confuse consistency with repeating the uploaded product photograph.
 

@@ -4,15 +4,16 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 function fixture(granted = true, provider = 'gemini', tabStatus = 'complete') {
   let listener, opened = 0;
-  const sent = [], created = [];
+  const sent = [], created = [], updated = [];
+  let foreground = 101;
   let closed = false;
   const local = {connection: {origin: 'https://owner.example', provider}};
   const session = {};
   const registered = [];
   const store = data => ({get: async key => ({[key]: structuredClone(data[key])}), set: async values => Object.assign(data, structuredClone(values))});
   const chrome = {storage: {local: store(local), session: store(session)},
-    runtime: {getManifest:()=>({version:'0.1.6'}),onMessage: {addListener: fn => {listener = fn;}}},
-    tabs: {create: async options => {created.push(options); closed=false; return {id: ++opened + 100};}, get: async () => {if(closed)throw new Error('No tab');return {status: tabStatus};}, sendMessage: async (tabId, message) => {sent.push({tabId, message}); return {accepted: true};}},
+    runtime: {getManifest:()=>({version:'0.1.7'}),onMessage: {addListener: fn => {listener = fn;}}},
+    tabs: {create: async options => {created.push(options); closed=false; return {id: ++opened + 100};}, get: async id => {if(closed)throw new Error('No tab');return {status: tabStatus, active:id===foreground,windowId:1,url:id===1?'https://owner.example/studio':provider==='chatgpt'?'https://chatgpt.com/c/abc123':'https://gemini.google.com/app/abc123'};}, update:async(id,options)=>{updated.push({id,...options});foreground=id;}, sendMessage: async (tabId, message) => {sent.push({tabId, message}); return {accepted: true};}},
     permissions: {contains: async () => granted},
     scripting: {executeScript: async () => [], getRegisteredContentScripts:async()=>registered,
       registerContentScripts:async scripts=>registered.push(...scripts)}};
@@ -22,7 +23,7 @@ function fixture(granted = true, provider = 'gemini', tabStatus = 'complete') {
     nonce: 'random', expires_at: new Date(Date.now()+60000).toISOString(), prompt: 'Generate a complete ad',
     attachments: [{role: 'logo'}, {role: 'product'}]};
   const call = (message, sender = owner) => new Promise(resolve => listener(message, sender, resolve));
-  return {call, owner, packet, session, local, sent, created, registered, closeProvider:()=>{closed=true;}, opened: () => opened};
+  return {call, owner, packet, session, local, sent, created, updated, registered, focus:id=>{foreground=id;}, closeProvider:()=>{closed=true;}, opened: () => opened};
 }
 test('helper rejects unconnected origins and subframes', async () => {
   const f = fixture();
@@ -38,7 +39,7 @@ test('starts in a foreground tab and receives commands before full page load', a
   assert.equal(f.created[0].active,true);
   assert.equal(f.sent.length,1);
   assert.equal(f.sent[0].message.action,'generate');
-  assert.equal((await f.call({action:'status'})).helper_version,'0.1.6');
+  assert.equal((await f.call({action:'status'})).helper_version,'0.1.7');
 });
 test('one run opens one fresh tab and never resubmits after an interruption', async () => {
   const f = fixture();
@@ -105,7 +106,7 @@ test('extension startup restores its bridge only with an existing owner-origin g
 
 test('resume after extension reload cannot create another request when job tracking is missing', async () => {
   const f = fixture();
-  assert.equal((await f.call({action: 'status'})).helper_version, '0.1.6');
+  assert.equal((await f.call({action: 'status'})).helper_version, '0.1.7');
   const result = await f.call({action: 'start', packet: f.packet, resumeOnly: true});
   assert.equal(result.stage, 'paused');
   assert.match(result.error, /nothing was resent/);
@@ -159,4 +160,35 @@ test('a stale ChatGPT view gets one fresh observer of the same submitted convers
   const fresh={...provider,tab:{id:f.session.job.providerTab}};
   assert.equal((await f.call({action:'provider-refresh',packet:f.packet},fresh)).ok,false);
   assert.equal(f.opened(),2);
+});
+
+test('returns to Falkrona only after the matching submission is confirmed', async () => {
+  const f=fixture(true,'chatgpt');await f.call({action:'start',packet:f.packet});
+  const sender={tab:{id:101},frameId:0,url:'https://chatgpt.com/c/abc123'};
+  assert.ok((await f.call({action:'provider-progress',stage:'generating'},sender)).error);
+  await f.call({action:'provider-progress',stage:'submitted'},sender);
+  assert.equal(f.updated.length,0);
+  await f.call({action:'provider-progress',stage:'generating'},sender);
+  assert.deepEqual(f.updated,[{id:1,active:true}]);
+  await f.call({action:'provider-progress',stage:'generating'},sender);
+  assert.equal(f.updated.length,1);
+});
+test('does not steal focus when the owner switched to another tab', async () => {
+  const f=fixture(true,'chatgpt');await f.call({action:'start',packet:f.packet});f.focus(99);
+  const sender={tab:{id:101},frameId:0,url:'https://chatgpt.com/c/abc123'};
+  await f.call({action:'provider-progress',stage:'submitted'},sender);
+  await f.call({action:'provider-progress',stage:'generating'},sender);
+  await f.call({action:'provider-result',image:'data:image/png;base64,YWJj'},sender);
+  assert.equal(f.updated.length,0);
+});
+test('opens the bound image request without submitting again', async () => {
+  const f=fixture();await f.call({action:'start',packet:f.packet});
+  await new Promise(resolve=>setImmediate(resolve));const sent=f.sent.length;
+  assert.ok((await f.call({action:'open',runId:f.packet.run_id},{...f.owner,tab:{id:2}})).error);
+  await f.call({action:'open',runId:f.packet.run_id});
+  assert.deepEqual(f.updated,[{id:101,active:true}]);assert.equal(f.sent.length,sent);
+  assert.equal(f.opened(),1);
+});
+test('revoked host access fails the readiness check', async () => {
+  const f=fixture(false);assert.match((await f.call({action:'status'})).error,/access was removed/);
 });

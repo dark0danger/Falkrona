@@ -51,7 +51,7 @@ class AppSettings:
     hermes_python: str = ""
     openai_model: str = ""
     agent_max_model_calls: int = 12
-    agent_max_input_tokens: int = 24_000
+    agent_max_input_tokens: int = 48_000
     agent_max_output_tokens: int = 12_000
     meta_app_id: str = ""
     meta_app_secret: str = ""
@@ -155,7 +155,7 @@ class AppSettings:
             hermes_python=values.get("BRANDPILOT_HERMES_PYTHON", "").strip(),
             openai_model=values.get("BRANDPILOT_OPENAI_MODEL", "").strip(),
             agent_max_model_calls=_positive_int(values, "BRANDPILOT_AGENT_MAX_MODEL_CALLS", 12),
-            agent_max_input_tokens=_positive_int(values, "BRANDPILOT_AGENT_MAX_INPUT_TOKENS", 24_000),
+            agent_max_input_tokens=_positive_int(values, "BRANDPILOT_AGENT_MAX_INPUT_TOKENS", 48_000),
             agent_max_output_tokens=_positive_int(values, "BRANDPILOT_AGENT_MAX_OUTPUT_TOKENS", 12_000),
             meta_app_id=meta_app_id,
             meta_app_secret=meta_app_secret,

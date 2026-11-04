@@ -71,7 +71,7 @@ class Phase4Service:
         gemini_model: str = "",
         openai_model: str = "",
         max_model_calls: int = 12,
-        max_input_tokens: int = 24_000,
+        max_input_tokens: int = 48_000,
         max_output_tokens: int = 12_000,
     ) -> None:
         self._sessions = sessions

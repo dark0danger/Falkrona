@@ -274,7 +274,7 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
       if (["paused", "unavailable"].includes(result.stage ?? "")) throw new Error(result.error ?? "Open the image app to finish. Your prepared prompt is saved below.");
       setPlanningStatus(({opening: "Opening your image app…", checking: "Checking your saved request…",
         attaching: "Adding your brand images…", ready_to_send: "Sending your design request…",
-        submitted: "Creating your image…"} as Record<string, string>)[result.stage ?? ""] ?? "Preparing your design…");
+        submitted: "Creating your image…", generating: "Creating your image…"} as Record<string, string>)[result.stage ?? ""] ?? "Preparing your design…");
       await new Promise(resolve => window.setTimeout(resolve, 2000));
     }
     throw new Error("Your image request is saved. Download the result from the image app and import it below; nothing will be resent.");
@@ -284,7 +284,7 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
     if (!generationReady || !useGemini) throw new Error("Gemini planning needs operator setup before creating a design.");
     if (!imageAppConsent) throw new Error("Allow your chosen image app to receive the brand details and images first.");
     const requestId = activeRequest.current;
-    setPlanningStatus("Gemini is preparing your design idea and advertising copy…");
+    setPlanningStatus("Preparing and polishing your post…");
     type Run = {id: string; status: string; last_error?: string};
     let run = await requestJson<Run>(`${base}/designs/${draft.id}/direction`, {
       method: "POST", headers: {"X-CSRF-Token": csrf},
@@ -477,8 +477,8 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
   if (!branding?.ready) return <section className="queue calendar-empty"><ImageIcon size={24} /><h2>Let's set up your brand first</h2><p>Answer the short questions and upload your transparent logo to unlock designs.</p><button className="primary" type="button" onClick={openBrand}>Open Branding</button></section>;
   if (!selection) return <section className="queue studio-empty"><span className="empty-icon"><ImageIcon size={25}/></span><h2>Your next great post starts here</h2><p>Open a saved post from your content plan to edit or download it.</p><button className="primary" type="button" onClick={openCalendar}>Open content plan</button></section>;
   return <section className="queue studio-view" aria-labelledby="studio-title">
-    <div className="section-heading"><div><p className="eyebrow">MAKE YOUR NEXT POST</p><h2 id="studio-title">Design studio</h2></div>
-      <button className="icon-button" type="button" onClick={openCalendar}>Back to Calendar</button></div>
+    <div className="section-heading"><div><p className="eyebrow">MAKE YOUR NEXT POST</p><h2 id="studio-title" className="sr-only">Your design</h2></div>
+      <button className="icon-button" type="button" onClick={openCalendar}>Back to plan</button></div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {packet && helperSetup}
     {planningStatus && <p role="status">{planningStatus}</p>}
@@ -506,12 +506,12 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
     {overflow && <p className="warning-note">Some text does not fit this format. Shorten it before export.</p>}
     {!design || !scene ? (packet ? null : <div className="calendar-empty studio-create"><ImageIcon size={23} /><p>Add a photo of your product. Falkrona will handle the layout, colors and logo.</p><div className="studio-fields">{imageChoices}</div>{canEdit && <button className="primary" type="button" disabled={Boolean(busy) || Boolean(packet) || !imageAppConsent || !logoAssetId || !photoAssetId || !productImageConfirmed} onClick={() => void create()}>Create design</button>}</div>) : <>
       <div className="studio-toolbar"><span>{externalArtwork ? "Generated post" : `Revision ${design.revision}`}{dirty ? " · unsaved" : ""}{design.needs_fact_review && !externalArtwork ? " · fact review needed" : ""}</span>
-        <div className="studio-actions"><button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!undo.length} onClick={() => {
+        <div className="studio-actions">{(!externalArtwork || dirty) && <button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!undo.length} onClick={() => {
           const previous = undo.at(-1); if (previous) { setScene(previous.scene); setCaption(previous.caption); setUndo(undo.slice(0, -1)); }
-        }}><Undo2 size={17} /></button>
-          {canEdit && <button className="icon-button" type="button" disabled={!dirty || Boolean(busy)} onClick={() => void save()}><Save size={16} /> Save changes</button>}
-          <button className="icon-button" type="button" disabled={Boolean(busy) || Boolean(dirty) || overflow} onClick={() => void downloadPng()}><Download size={16} /> PNG</button>
-          <button className="primary" type="button" disabled={Boolean(busy) || Boolean(dirty) || overflow} onClick={() => void renderAndDownload()}><Download size={16} /> {busy === "render" ? "Rendering..." : "Download post package"}</button></div></div>
+        }}><Undo2 size={17} /></button>}
+          {canEdit && dirty && <button className="icon-button" type="button" disabled={Boolean(busy)} onClick={() => void save()}><Save size={16} /> Save changes</button>}
+          {!externalArtwork && <button className="icon-button" type="button" disabled={Boolean(busy) || Boolean(dirty) || overflow} onClick={() => void downloadPng()}><Download size={16} /> PNG</button>}
+          <button className="primary" type="button" disabled={Boolean(busy) || Boolean(dirty) || overflow} onClick={() => void renderAndDownload()}><Download size={16} /> {busy === "render" ? "Rendering..." : "Download post"}</button></div></div>
       <div className="studio-layout"><div className="studio-workarea">
         <div className="studio-preview" style={{ aspectRatio: `${PRESETS[scene.preset][0]} / ${PRESETS[scene.preset][1]}` }}>
           <SceneSvg scene={scene} slideIndex={slideIndex} imageData={imageData} svgRef={svgRef} />
@@ -528,20 +528,20 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
       </div><div className="studio-inspector">
         <div className="studio-fields"><h3>Your post</h3>
           {!externalArtwork && <label>Headline<textarea value={text("headline")?.text ?? ""} disabled={!canEdit} maxLength={600} onChange={(event) => updateLayer("headline", { text: event.target.value } as Partial<TextLayer>)} /></label>}
-          {externalArtwork && <p className="muted">Want a different look? Describe your change in “Create a new version” below.</p>}
+
           <label>Caption<textarea value={caption} disabled={!canEdit || Boolean(busy) || Boolean(packet)} maxLength={4000} onChange={(event) => update(scene, event.target.value)} /></label>
           <details><summary>Create a new version</summary>{imageChoices}
             {canEdit && <button className="icon-button" type="button" disabled={Boolean(busy) || Boolean(dirty) || !photoAssetId || !productImageConfirmed} onClick={() => void regenerate()}><Sparkles size={16} /> Create a new version</button>}
           </details>
+      <details><summary>Improve future posts</summary><LearningPanel key={design.id} workspaceId={workspaceId} designId={design.id} csrf={csrf}
+        canEdit={canEdit} canApprove={canApprove} /></details>
         </div>
       </div></div>
       <details><summary>Design details</summary>
         <div className="studio-facts"><strong>Source facts</strong>{design.factual_refs.map((ref, index) => <span key={index}>{ref.field}: {ref.value}</span>)}</div>
-        {design.creative_direction?.image_prompt && <div className="studio-facts"><strong>Gemini design direction</strong><p>{design.creative_direction.design_idea}</p><details><summary>Image prompt</summary><p>{design.creative_direction.image_prompt}</p></details></div>}
+        {design.creative_direction?.image_prompt && <div className="studio-facts"><strong>Creative direction</strong><p>{design.creative_direction.design_idea}</p><details><summary>Image prompt</summary><p>{design.creative_direction.image_prompt}</p></details></div>}
       </details>
       {Boolean(design.creative_direction?.missing_information.length) && <p className="warning-note">Needs clarification: {design.creative_direction?.missing_information.join("; ")}</p>}
-      <details><summary>Tell Falkrona what you like</summary><LearningPanel key={design.id} workspaceId={workspaceId} designId={design.id} csrf={csrf}
-        canEdit={canEdit} canApprove={canApprove} /></details>
     </>}
   </section>;
 }

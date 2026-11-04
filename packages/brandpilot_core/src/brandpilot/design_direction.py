@@ -14,7 +14,7 @@ from sqlalchemy import select
 from .config import ExecutionMode, ModelProvider
 from .creative import CreativeError, IMAGE_MIMES, _logo_palette, _branding, reference_traits
 from .database import set_workspace_context
-from .learning import applicable_preferences
+from .learning import applicable_preferences, writing_memory, post_feedback
 from .models import AgentRun, BrandProfileVersion, DesignVersion, Job, Product, WeeklyPlan, WorkspaceAsset
 from .phase4 import Phase4Error, classify_and_redact
 from .provider_policy import ModelRequest, admit_model_request
@@ -165,7 +165,19 @@ def model_context(value):
     return value
 
 
-def context_snapshot(session, workspace_id, design_id, inputs, storage):
+def saved_skill_hash(prompt, editorial_version):
+    if editorial_version is None:
+        # A prepared older request is bound to the skill it actually used.
+        try:
+            value = json.loads(prompt.rsplit("\nBusiness context:\n", 1)[1]).get("skill_sha256")
+            if isinstance(value, str) and len(value) == 64:
+                return value
+        except (IndexError, ValueError, AttributeError):
+            pass
+    return None
+
+
+def context_snapshot(session, workspace_id, design_id, inputs, storage, *, editorial_version=1, skill_hash=None):
     branding = _branding(session, workspace_id)
     if inputs["logo_asset_id"] != branding.logo_asset_id:
         raise CreativeError("brand_logo_mismatch", "Use the logo saved in Branding.")
@@ -221,7 +233,7 @@ def context_snapshot(session, workspace_id, design_id, inputs, storage):
                "logo_palette": _logo_palette(storage.read_bytes(assets[inputs["logo_asset_id"]].storage_key)),
                "owner_inputs": inputs, "design_revision": design.id,
                "creative_pipeline_version": 5,
-               "skill_sha256": hashlib.sha256(SKILL_PATH.read_bytes()).hexdigest(),
+               "skill_sha256": skill_hash or hashlib.sha256(SKILL_PATH.read_bytes()).hexdigest(),
                "asset_roles": {"product": "product_identity_only", "logo": "exact_brand_asset",
                                "reference": "optional_design_inspiration_only"},
                "output": {"dimensions": [1080, 1350], "editable_text": False,
@@ -246,6 +258,10 @@ def context_snapshot(session, workspace_id, design_id, inputs, storage):
         context["design_reference"] = {"id": reference.id, "sha256": reference.sha256,
             "traits": reference_traits(storage.read_bytes(reference.storage_key)),
             "instruction": "Borrow image character, texture and hierarchy only. Keep the campaign typography and palette. Execute this post's distinct scene and composition; do not copy the reference's literal layout, subject, text or logos."}
+    if editorial_version == 1:
+        context["approved_voice_examples"] = writing_memory(session, workspace_id)
+        context["owner_feedback"] = post_feedback(session, workspace_id, plan.id, item["id"])
+        context["editorial_version"] = 1
     encoded = json.dumps(context, sort_keys=True, ensure_ascii=False)
     return context, hashlib.sha256(encoded.encode()).hexdigest()
 
@@ -264,7 +280,13 @@ class DirectionService:
         with self.sessions() as session, session.begin():
             set_workspace_context(session, workspace_id)
             context, digest = context_snapshot(session, workspace_id, design_id, inputs, self.storage)
-        prompt = SYSTEM + "\nHermes creative skill:\n" + SKILL_PATH.read_text(encoding="utf-8") + "\nBusiness context:\n" + json.dumps(model_context(context), ensure_ascii=False)
+        prompt_context = model_context(context)
+        # Keep the full prior prompts locally for duplicate checks. The new draft needs
+        # the rejected concepts and a short description, not every old instruction.
+        prompt_context["campaign"]["previous_directions"] = [
+            {"design_idea": entry.get("design_idea", "")[:300]}
+            for entry in context["campaign"]["previous_directions"]]
+        prompt = SYSTEM + "\nHermes creative skill:\n" + SKILL_PATH.read_text(encoding="utf-8") + "\nBusiness context:\n" + json.dumps(prompt_context, ensure_ascii=False)
         admission = admit_model_request(self.runtime, ModelRequest(provider=ModelProvider.GEMINI,
             contains_private_data=classify_and_redact(prompt).contains_private_data))
         if not admission.ok:
@@ -284,7 +306,7 @@ class DirectionService:
                 "visual_assets": context["assets"] + ([{"role": "reference", "id": context["design_reference"]["id"],
                     "sha256": context["design_reference"]["sha256"]}] if "design_reference" in context else []),
                 "inputs": inputs, "public_context_confirmed": public_context_confirmed,
-                "pipeline_version": 5, "logo_palette": context["logo_palette"],
+                "pipeline_version": 5, "editorial_version": 1, "logo_palette": context["logo_palette"],
                 "campaign": context["campaign"],
                 "max_tool_calls": 0, "max_repair_cycles": 0, "network_retries": 0})
         return self.phase4.get_run(principal, workspace_id, run["id"])
@@ -294,7 +316,9 @@ def resolve_direction(session, workspace_id, design_id, run_id, inputs, storage)
     row = session.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id))
     if not row or row.status != "completed" or row.cancel_requested or row.checkpoint.get("design_id") != design_id:
         raise CreativeError("direction_unavailable", "Wait for this design's Gemini direction to complete.")
-    _, digest = context_snapshot(session, workspace_id, design_id, inputs, storage)
+    _, digest = context_snapshot(session, workspace_id, design_id, inputs, storage,
+                                 editorial_version=row.checkpoint.get("editorial_version"),
+                                 skill_hash=saved_skill_hash(row.redacted_prompt, row.checkpoint.get("editorial_version")))
     if digest != row.checkpoint.get("context_digest"):
         raise CreativeError("direction_stale", "The brand, product, preferences or design inputs changed. Prepare a new direction.")
     try:

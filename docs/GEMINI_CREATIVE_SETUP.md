@@ -13,7 +13,11 @@
 
 ## Owner flow
 
-Complete **Branding** with the brand survey, transparent logo, and optional design reference. Upload the real product photo in **Products** and provide truthful details. In **Content plan**, choose a future week, product photo, Arabic/English, and sharing consent. **Draft a plan** starts the live Gemini weekly plan and detailed per-post prompts, then the connected image app creates complete ads. Review the completed designs, captions, and posting times; whole-plan publishing approval is a later step.
+Complete **Branding** with the brand survey, transparent logo, and optional design reference. Upload the real product photo in **Products** and provide truthful details. In **Content plan**, choose a future week, product photo, Arabic/English, and sharing consent. **Create my week** asks Hermes to draft and review the week, copy, and image prompts using Gemini, then the connected image app creates complete ads. Review the completed designs, captions, and posting times; whole-plan publishing approval is a later step.
+
+On a saved post, open **Improve future posts** to leave feedback. Owners can save a writing or design preference for this brand, and remove it later. Recent approved captions are also used as examples of the brand's voice. Changes apply to future plans or generations.
+
+Each new plan and creative direction uses two bounded Gemini calls. If you set explicit run limits in an older installation, allow at least two model calls and use the current example input budget (`BRANDPILOT_AGENT_MAX_INPUT_TOKENS=48000`). Restart the API and worker after updating the settings.
 
 ## Prompt contract
 

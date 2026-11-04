@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from .config import ModelProvider
 from .database import set_workspace_context
 from .design_direction import DesignDirection, direction_schema
+from .editorial import review_prompt, validate_review
 from .models import AgentRun, WeeklyPlan, WorkspaceAsset, utc_now
 from .visual_planning import repeats_image_prompt
 from .phase4 import Phase4Error, classify_and_redact
@@ -133,6 +134,7 @@ class CreativeDirectionHandler:
             self.phase4.admit_model_call(workspace, run_id, input_tokens=len(prompt.encode()) // 2 + 4000 + 2048 * len(visual_assets),
                                          output_tokens=4000)
             progress()
+            images = []
             if claim.kind == "planning.week":
                 from .weekly_planning import GeminiWeek
                 result = (self.executor(prompt, model, progress, schema=checkpoint.get("response_schema") or GeminiWeek.model_json_schema())
@@ -144,7 +146,6 @@ class CreativeDirectionHandler:
                           if isinstance(self.executor, HermesCreativeExecutor) else self.executor(prompt, model, progress))
                 validated = {"survey": BrandingSurvey.model_validate_json(result["text"]).model_dump()}
             else:
-                images = []
                 if isinstance(self.executor, HermesCreativeExecutor):
                     # Small in-memory previews strip metadata; no remote asset URLs or original files reach Hermes.
                     storage = self.phase4._storage
@@ -183,11 +184,38 @@ class CreativeDirectionHandler:
                         raise Phase4Error("language_mismatch", "Gemini did not write the copy in your selected language. Try again.")
             if result.get("model_calls", 0) != 1:
                 raise Phase4Error("invalid_usage", "The runtime exceeded its single-call contract.")
-            if claim.kind == "creative.direction":
-                from .design_direction import context_snapshot
+            if checkpoint.get("editorial_version") == 1 and claim.kind in {"planning.week", "creative.direction"}:
+                from .weekly_planning import GeminiWeek
+                field = "plan" if claim.kind == "planning.week" else "direction"
+                draft = validated[field]
+                editing = review_prompt(prompt, draft, claim.kind)
+                # Both calls are admitted before transport; never silently deliver an unreviewed draft.
+                self.phase4.admit_model_call(workspace, run_id,
+                    input_tokens=len(editing.encode()) // 2 + 4000, output_tokens=4000)
+                progress()
                 with self.sessions() as session, session.begin():
                     set_workspace_context(session, workspace)
-                    _, digest = context_snapshot(session, workspace, checkpoint["design_id"], checkpoint["inputs"], self.phase4._storage)
+                    row = session.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace, AgentRun.id == run_id))
+                    row.checkpoint = {**row.checkpoint, "stage": "editing"}
+                schema = checkpoint.get("response_schema") or (GeminiWeek.model_json_schema() if field == "plan" else direction_schema())
+                reviewed = (self.executor(editing, model, progress, schema=schema)
+                            if isinstance(self.executor, HermesCreativeExecutor) else self.executor(editing, model, progress))
+                if reviewed.get("model_calls", 0) != 1:
+                    raise Phase4Error("invalid_usage", "The editorial pass exceeded its single-call contract.")
+                parsed = (GeminiWeek if field == "plan" else DesignDirection).model_validate_json(reviewed["text"]).model_dump()
+                validate_review(draft, parsed, claim.kind)
+                validated[field] = parsed
+                validated["editorial_review"] = {"version": 1, "status": "completed", "model_calls": 2}
+                usage = {key: result.get("usage", {}).get(key, 0) + reviewed.get("usage", {}).get(key, 0)
+                         for key in ("input_tokens", "output_tokens")}
+                result = {**reviewed, "usage": usage}
+            if claim.kind == "creative.direction":
+                from .design_direction import context_snapshot, saved_skill_hash
+                with self.sessions() as session, session.begin():
+                    set_workspace_context(session, workspace)
+                    _, digest = context_snapshot(session, workspace, checkpoint["design_id"], checkpoint["inputs"], self.phase4._storage,
+                                                 editorial_version=checkpoint.get("editorial_version"),
+                                                 skill_hash=saved_skill_hash(prompt, checkpoint.get("editorial_version")))
                     if digest != checkpoint["context_digest"]:
                         raise Phase4Error("direction_stale", "Your brand, product or brief changed; prepare a new direction.")
                 validated.update(renderer="browser_image_app", image_api_calls=0)

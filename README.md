@@ -52,7 +52,7 @@ Falkrona grew out of a graphic designer’s experience with that problem. It giv
 | Integration | Status |
 | --- | --- |
 | Gemini API planning through Hermes | Available for weekly plans and individual design prompts. |
-| ChatGPT website image generation | Automatic attachment, submission, and image return through Browser Helper **0.1.6**. |
+| ChatGPT website image generation | Automatic attachment, submission, and image return through Browser Helper **0.1.7**. |
 | Gemini website image generation | Adapter included; live account validation is pending. |
 | Facebook Page connection and scheduled publishing | Available with a configured Meta app, Page permissions, and running workers. |
 | Instagram | Planned. Publishing is currently unavailable. |
@@ -159,8 +159,8 @@ Next, [install and connect the browser helper](docs/SETUP.md#8-connect-the-brows
 
 1. **Branding:** answer the short survey, upload a transparent logo, optionally add a design reference, and save.
 2. **Products:** upload product identity photos and enter truthful product details.
-3. **Content plan:** choose a future week, product photo, Arabic or English, and consent to sharing the brand inputs. Click **Draft a plan**.
-4. **Generate:** the live draft flow prepares the Gemini plan and prompts, then runs the connected image app. Finished posts appear in the plan. Saved interrupted runs offer **Continue creating designs**.
+3. **Content plan:** choose a future week, product photo, Arabic or English, and consent to sharing the brand inputs. Click **Create my week**.
+4. **Generate:** Hermes drafts and reviews the plan, headlines, captions, and image prompts using Gemini, then runs the connected image app. Finished posts appear in the plan. Saved interrupted runs offer **Continue creating designs**.
 5. **Review:** inspect the artwork and captions. Regenerate, delete, or change future posting times before approval.
 6. **Approve plan & schedule:** approve the whole plan for the selected Facebook Page. Workers publish the approved posts at their Cairo times.
 7. **Results:** view engagement and weekly reports from the connected Page. New posts may need time to accumulate data.

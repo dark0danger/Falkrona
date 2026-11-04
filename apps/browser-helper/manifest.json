@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Falkrona Browser Helper",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Send your authorized Falkrona brief to your image app and return the generated ad.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "storage"],

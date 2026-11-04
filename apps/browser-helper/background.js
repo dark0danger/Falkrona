@@ -33,6 +33,17 @@ async function saveJob(job) {
   retained[job.runId] = metadata;
   await chrome.storage.local.set({jobs: Object.fromEntries(Object.entries(retained).slice(-25))});
 }
+async function returnToOwner(job) {
+  // Return only from our own foreground image tab. Never steal focus from
+  // another tab/window the owner deliberately selected while waiting.
+  try {
+    const providerTab = await chrome.tabs.get(job.providerTab);
+    const ownerTab = await chrome.tabs.get(job.ownerTab);
+    if (providerTab.active && providerTab.windowId === ownerTab.windowId &&
+        new URL(ownerTab.url).origin === job.origin)
+      await chrome.tabs.update(job.ownerTab, {active: true});
+  } catch { /* A closed/navigated owner tab does not invalidate the image. */ }
+}
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   route(message, sender).then(respond, error => respond({error: error.message}));
   return true;
@@ -57,16 +68,34 @@ async function route(message, sender) {
       return {ok:true};
     }
     if (message.action === "provider-progress") {
+      if (!["attaching", "ready_to_send", "submitted", "generating"].includes(message.stage)) throw new Error("Unknown image stage.");
+      if (message.stage === "generating" && !job.submitted) throw new Error("Submission has not been recorded.");
       await saveJob({...job, stage: message.stage, providerUrl: sender.url, submitted: job.submitted || message.stage === "submitted"});
+      if (message.stage === "generating" && !job.returnedToOwner) {
+        await saveJob({...await readJob(), returnedToOwner: true});
+        await returnToOwner(job);
+      }
       return {ok: true};
     }
     if (message.image && (!job.submitted || !/^data:image\/(png|jpeg|webp);base64,/.test(message.image) || message.image.length > 20_000_100)) throw new Error("Invalid result.");
     await saveJob({...job, stage: message.image ? "complete" : "paused", image: message.image, error: message.error});
+    await returnToOwner(job);
     return {ok: true};
   }
   if (!connection || sender.frameId !== 0 || !sender.tab || new URL(sender.url).origin !== connection.origin) throw new Error("Connect this Falkrona page using the helper button first.");
-  if (message.action === "status") return {connected: true, provider: connection.provider, helper_version: chrome.runtime.getManifest().version, account_verified: false};
+  if (message.action === "status") {
+    const connected = await chrome.permissions.contains({origins:[`${connection.origin}/*`,`${sites[connection.provider]}/*`]});
+    if (!connected) throw new Error("Image access was removed. Reconnect the helper in Accounts.");
+    return {connected: true, provider: connection.provider, helper_version: chrome.runtime.getManifest().version, account_verified: false};
+  }
   const job = await readJob(message.runId || message.packet?.run_id);
+  if (message.action === "open") {
+    if (!job || job.ownerTab !== sender.tab.id || job.origin !== connection.origin) throw new Error("No image request belongs to this tab.");
+    const tab = await chrome.tabs.get(job.providerTab);
+    if (!tab.url || new URL(tab.url).origin !== sites[job.provider]) throw new Error("The image tab changed. Use the saved recovery options.");
+    await chrome.tabs.update(job.providerTab,{active:true});
+    return {stage:job.stage};
+  }
   if (message.action === "poll") {
     if (!job || job.runId !== message.runId || job.ownerTab !== sender.tab.id || job.origin !== connection.origin) return {stage: "unavailable"};
     if (Date.now() > Date.parse(job.expiresAt)) return {stage: "paused", error: "The request expired. Your direction is saved; import the downloaded image manually."};

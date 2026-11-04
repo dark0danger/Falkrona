@@ -12,7 +12,7 @@ design-generation method. Existing drafts remain available.
 
 1. Complete Branding with the brand survey, transparent logo and optional design
    reference. Upload a product identity photo in Products.
-2. Click Draft a plan in Content plan. Gemini drafts the weekly Facebook plan
+2. Click Create my week in Content plan. Gemini drafts the weekly Facebook plan
    from confirmed business context and the selected Arabic/English language.
    The live draft flow starts distinct detailed prompts and image generation
    automatically; saved interrupted batches offer Continue creating designs.
@@ -94,7 +94,7 @@ image. Both preserve the input roles and skip local design generation.
 
 ## Implementation and current verification
 
-The creative worker now performs one Gemini planning call (pipeline 4) and stops
+For new creative directions, Hermes drafts and then reviews the copy and prompt in two bounded Gemini calls. The worker stops
 at `awaiting_image_app`. It never calls local segmentation/composition. The browser
 packet includes explicit role-named attachments, the complete prompt, selected
 provider consent and a 30-minute, user/workspace/run-bound import nonce. Originals
@@ -108,8 +108,7 @@ No account credentials, cookie permission, image API, or publishing access.
 Disconnect removes those grants and stops helper work. A changed tunnel URL needs
 reconnection; marketplace distribution remains future work.
 
-The normal path is Content plan Draft a plan → Gemini weekly plan → Gemini
-prompts for all posts → helper attachment/submission → automatic import/download.
+In Content plan, select Create my week. Hermes drafts and reviews the week and each image prompt, then the browser helper submits the requests and imports the finished designs.
 On interrupted/uncertain requests the helper
 never automatically resends. A saved direction can be reopened without another
 planning call. Manual recovery exposes the prompt, role-named files and image import.

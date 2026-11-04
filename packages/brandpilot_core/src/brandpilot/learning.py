@@ -7,12 +7,32 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .accounts import AccountService, Principal
 from .database import set_workspace_context
-from .models import DesignFeedback, DesignVersion, LearnedPreference, WeeklyPlan, Workspace
+from .models import DesignFeedback, DesignVersion, LearnedPreference, PublicationApproval, WeeklyPlan, Workspace
 
 
 SCOPES = {"post", "campaign", "platform", "future"}
 CATEGORIES = {"imagery", "copy", "layout", "color", "typography", "tone", "other"}
 KINDS = {"preference", "fact", "hypothesis"}
+
+
+def writing_memory(session: Session, workspace_id: str) -> list[dict]:
+    """Only owner-approved work teaches voice. Never treat draft/rejected copy as a success."""
+    approved = select(PublicationApproval.design_version_id).where(
+        PublicationApproval.workspace_id == workspace_id, PublicationApproval.status == "approved")
+    rows = session.scalars(select(DesignVersion).where(
+        DesignVersion.workspace_id == workspace_id, DesignVersion.id.in_(approved))
+        .order_by(DesignVersion.created_at.desc(), DesignVersion.id).limit(3)).all()
+    return [{"headline": row.creative_direction.get("headline", ""),
+             "cta": row.creative_direction.get("cta", ""), "caption": row.caption[:600],
+             "use": "Voice example only; not a claim source or proof of performance."} for row in rows]
+
+
+def post_feedback(session: Session, workspace_id: str, plan_id: str, item_id: str) -> list[str]:
+    designs = select(DesignVersion.id).where(DesignVersion.workspace_id == workspace_id,
+        DesignVersion.plan_id == plan_id, DesignVersion.item_id == item_id)
+    return list(session.scalars(select(DesignFeedback.interpretation).where(
+        DesignFeedback.workspace_id == workspace_id, DesignFeedback.design_version_id.in_(designs),
+        DesignFeedback.status == "local_only").order_by(DesignFeedback.created_at.desc()).limit(5)))
 
 
 class LearningError(ValueError):

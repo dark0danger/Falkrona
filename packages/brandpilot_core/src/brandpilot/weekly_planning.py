@@ -18,7 +18,8 @@ from .creative import _logo_palette
 from .phase4 import Phase4Error
 from .planning import GOALS, PLATFORMS, PlanningError, _available_products, _offer, _text, suggested_cadence
 from .branding import require_branding
-from .learning import applicable_preferences
+from .learning import applicable_preferences, writing_memory
+from .editorial import COPY_POLICY
 from .visual_planning import CampaignIdentity, VisualConcept, validate_visual_variety
 
 
@@ -60,7 +61,7 @@ def response_schema(context):
     return schema
 
 
-def snapshot(session, workspace_id, inputs, storage):
+def snapshot(session, workspace_id, inputs, storage, *, editorial_version=1):
     workspace = session.scalar(select(Workspace).where(Workspace.id == workspace_id))
     if not workspace:
         raise PlanningError("workspace_not_found", "Workspace is unavailable.")
@@ -113,6 +114,8 @@ def snapshot(session, workspace_id, inputs, storage):
         "preferences": applicable_preferences(session, workspace_id, campaign_key=inputs["week_start"]),
         "profile_version": profile.version, "previous_plan_id": previous.id if previous else None,
         "established_visual_identity": established}
+    if editorial_version == 1:
+        context.update(approved_voice_examples=writing_memory(session, workspace_id), editorial_version=1)
     from .brand_treatment import with_cta
     if established:
         context["established_visual_identity"] = with_cta(established, palette)
@@ -152,7 +155,7 @@ class WeeklyPlannerService:
         prompt_context["facts"] = {key: {"field": value["field"], "value": value["value"]} for key, value in context["facts"].items()}
         prompt_context["recent_posts"] = [{"platform": post["platform"], "text": post["text"]} for post in context["recent_posts"]]
         prompt_context["preferences"] = [{"category": value["category"], "instruction": value["instruction"]} for value in context["preferences"]]
-        prompt = ("You are Falkrona's social media strategist. Draft a specific, varied weekly plan for this small business. "
+        prompt = (COPY_POLICY + "\nYou are Hermes, Falkrona's social media strategist. Draft a specific, varied weekly plan for this small business. "
             "Use the owner's brand, audience, style, confirmed product details, preferences and recent posts below. "
             "Produce exactly cadence posts, only the requested platforms, each as one portrait 4:5 image. "
             "Write distinctive practical ideas, not generic templates. Give each post a clear concept, CTA and rationale. "
@@ -192,13 +195,14 @@ class WeeklyPlannerService:
             if prior:
                 key = key + f":{prior.id}" if prior.status in {"failed", "cancelled"} else prior.dedupe_key
         return self.phase4.create_run(principal, workspace_id, prompt, key, job_kind="planning.week",
-            checkpoint={"inputs": inputs, "context_digest": digest, "max_tool_calls": 0,
+            checkpoint={"inputs": inputs, "context_digest": digest, "max_tool_calls": 0, "editorial_version": 1,
                         "response_schema": response_schema(context), "max_repair_cycles": 0, "network_retries": 0})
 
 
 def apply_week(session, workspace_id, run, draft, storage):
     session.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
-    context, digest, previous = snapshot(session, workspace_id, run.checkpoint["inputs"], storage)
+    context, digest, previous = snapshot(session, workspace_id, run.checkpoint["inputs"], storage,
+                                         editorial_version=run.checkpoint.get("editorial_version"))
     if digest != run.checkpoint["context_digest"]:
         raise PlanningError("plan_stale", "Brand details or the week changed. Draft the week again.")
     if len(draft.posts) != context["cadence"]:

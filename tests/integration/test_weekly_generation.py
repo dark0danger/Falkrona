@@ -51,7 +51,7 @@ class WeekFlowTests(unittest.TestCase):
         self.assertEqual(first.json()['id'],self.draft().json()['id'])
         captured=[]
         self.execute(lambda prompt,*_ :captured.append(prompt) or {"text":json.dumps(self.content()),"model_calls":1})
-        self.assertEqual(len(captured),1)
+        self.assertEqual(len(captured),2)
         self.assertIn('250g whole beans',captured[0]);self.assertIn('Nile Coffee',captured[0])
         plan=self.client.get(f"{self.base}/plans?week_start=2026-12-28").json()['plan']
         self.assertEqual(plan['strategy']['planner'],'gemini')
@@ -82,7 +82,7 @@ class WeekFlowTests(unittest.TestCase):
         captured=[]; imported_posts=[]
         for index,entry in enumerate(entries):
             direction=deepcopy(direction_fixture.DIRECTION)
-            direction['image_prompt']=self.content()['posts'][index]['visual_concept']['scene']
+            direction['image_prompt']=self.content()['posts'][index]['visual_concept']['scene']+' Headline: '+direction['headline']+' CTA: '+direction['cta']
             self.execute(lambda prompt,*_:captured.append(prompt) or {"text":json.dumps(direction),"model_calls":1})
             runpath=f"{self.base}/agent-runs/{entry['run_id']}"
             packet=self.client.post(runpath+'/browser-packet',headers=self.csrf,json={"provider":"chatgpt","consent":True}).json()
@@ -129,7 +129,7 @@ class WeekFlowTests(unittest.TestCase):
         for index,entry in enumerate(response.json()['entries']):
             captured=[];direction=deepcopy(direction_fixture.DIRECTION)
             direction.update(language='ar',headline='قهوتك كل صباح',cta='اكتشف قهوتك',caption='استمتع بقهوتك المفضلة كل صباح.')
-            direction['image_prompt']=self.content()['posts'][index]['visual_concept']['scene']
+            direction['image_prompt']=self.content()['posts'][index]['visual_concept']['scene']+' Headline: '+direction['headline']+' CTA: '+direction['cta']
             self.execute(lambda prompt,*_:captured.append(prompt) or {"text":json.dumps(direction),"model_calls":1})
             self.assertIn('"language": "ar"',captured[0])
             runpath=f"{self.base}/agent-runs/{entry['run_id']}"

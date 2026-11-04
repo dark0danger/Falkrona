@@ -1,8 +1,12 @@
+import { currentCairoWeek } from "./dashboard";
+import { CampaignArt } from "./CampaignArt";
+import falkronaLogo from "./assets/falkrona-logo.png";
 import {
   Activity,
-  ArrowUpRight,
   BarChart3,
   Building2,
+  ChevronDown,
+  Layers3,
   CalendarDays,
   CheckCircle2,
   Database,
@@ -18,9 +22,6 @@ import {
   LogIn,
   LogOut,
   LayoutDashboard,
-  PanelRightClose,
-  PanelRightOpen,
-  RadioTower,
   RefreshCw,
   Send,
   Share2,
@@ -30,13 +31,20 @@ import {
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { componentStatus, type Health } from "./health";
 import { CalendarView } from "./CalendarView";
+import { ImageConnection } from "./ImageConnection";
 import { StudioView } from "./StudioView";
 import { ResultsView } from "./ResultsView";
 import { BrandingView, type Branding } from "./BrandingView";
 import { DashboardView } from "./DashboardView";
 import { AssetImage } from "./AssetImage";
 import { cairoInput } from "./CalendarView";
-import { currentCairoWeek } from "./dashboard";
+
+function FalkronaLogo({ onDark = false }: { onDark?: boolean }) {
+  return <span className={`falkrona-logo${onDark ? " on-dark" : ""}`} role="img" aria-label="Falkrona">
+    <img src={falkronaLogo} alt="" />
+    {onDark && <img className="logo-light-wordmark" src={falkronaLogo} alt="" />}
+  </span>;
+}
 
 type Workspace = { workspace_id: string; name: string; role: string };
 type CurrentUser = { id: string; email: string; workspaces: Workspace[] };
@@ -103,11 +111,11 @@ export function App() {
   const [busy, setBusy] = useState("");
   const [language, setLanguage] = useState<"en" | "ar">("en");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("dashboard");
+  const [planWeek, setPlanWeek] = useState(currentCairoWeek);
   const [dashboardRefresh, setDashboardRefresh] = useState(0);
   const [newReports, setNewReports] = useState(0);
   const [executionMode, setExecutionMode] = useState("offline_test");
   const [studioSelection, setStudioSelection] = useState<{ planId: string; itemId: string; platform: string; schedule: string } | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [metaReadAvailable, setMetaReadAvailable] = useState(false);
   const [socialConnections, setSocialConnections] = useState<SocialConnection[]>([]);
   const [managedAccounts, setManagedAccounts] = useState<Record<string, ManagedAccount[]>>({});
@@ -561,14 +569,9 @@ export function App() {
 
   if (!user) {
     return (
-      <main className="auth-layout">
+      <main className="auth-layout"><div className="auth-editorial"><div><FalkronaLogo onDark /><h2>Good work deserves to be seen.</h2><p>Plan, design and schedule a week of posts in one place.</p></div><CampaignArt /></div>
         <section className="auth-panel" aria-labelledby="auth-title">
-          <div className="auth-brand">
-            <div className="brand-lockup">
-              <div className="brand-mark"><span>FK</span></div>
-              <div className="brand-copy"><strong>FALKRONA</strong><span className="tagline">Your Brand's Pilot</span></div>
-            </div>
-          </div>
+          <div className="auth-brand"><FalkronaLogo /></div>
           <div className="auth-heading">
             <LockKeyhole size={22} />
             <div>
@@ -601,59 +604,62 @@ export function App() {
   const brandName = branding?.answers.brand_name || user.workspaces.find(workspace => workspace.workspace_id === workspaceId)?.name || "Your brand";
   const productPhotos = assets.filter(asset => asset.purpose === "product" && /^image\//.test(asset.mime_type) && ![branding?.logo_asset_id, branding?.reference_asset_id].includes(asset.id) && asset.source === "upload");
   const sections = [
-    { id: "dashboard", label: "Dashboard", arabic: "لوحة التحكم", icon: LayoutDashboard },
-    { id: "brand", label: "Brand", arabic: "هوية العلامة", icon: Building2 },
-    { id: "social", label: "Social accounts", arabic: "الحسابات الاجتماعية", icon: Share2 },
+    { id: "dashboard", label: "Overview", arabic: "نظرة عامة", icon: LayoutDashboard },
     { id: "calendar", label: "Content plan", arabic: "خطة المحتوى", icon: CalendarDays },
-    { id: "studio", label: "Creative studio", arabic: "استوديو التصميم", icon: Image },
+    { id: "brand", label: "Brand", arabic: "العلامة", icon: Layers3 },
+    { id: "social", label: "Accounts", arabic: "الحسابات", icon: Share2 },
+    { id: "results", label: "Reports", arabic: "التقارير", icon: BarChart3 },
   ] as const;
-  const subtitles: Record<string, string> = { brand: "A little about your brand. A lot of possibilities.", materials: "Your products, ready for their moment.", social: "Bring your accounts together and keep track of your posts.", calendar: "From a good idea to a whole week of content.", studio: "Make something your audience will love.", results: "See what’s working, and what to try next." };
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "numeric", hourCycle: "h23" }).format(new Date()));
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const pageTitle = activeTab === "materials" ? "Products" : activeTab === "results" ? "Weekly reports" : sections.find(section => section.id === activeTab)?.[language === "ar" ? "arabic" : "label"] ?? "Your workspace";
-  const chooseWorkspace = (id: string) => { setAssets([]); setBranding(null); setProfile(null); setInterview(null); setStudioSelection(null); setWorkspaceId(id); };
+  const pageTitle = activeTab === "studio" ? "Your post" : activeTab === "materials" ? "Products" : activeTab === "results" ? "Weekly reports" : sections.find(section => section.id === activeTab)?.[language === "ar" ? "arabic" : "label"] ?? "Your workspace";
+  const chooseWorkspace = (id: string) => { setAssets([]); setBranding(null); setProfile(null); setInterview(null); setStudioSelection(null); setPlanWeek(currentCairoWeek()); setWorkspaceId(id); };
   const openSavedPost = (planId: string, itemId: string, platform: string, schedule: string) => { setStudioSelection({ planId, itemId, platform, schedule: cairoInput(schedule) }); setActiveTab("studio"); };
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
-        <div className="sidebar-topline">
-          <div className="brand-lockup" aria-label="Falkrona"><div className="brand-mark"><span>F</span></div><div className="brand-copy"><strong>FALKRONA</strong></div></div>
-          <button className="sidebar-toggle" type="button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
-            {sidebarCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+    <div className="editorial-shell" dir={language === "ar" ? "rtl" : "ltr"}>
+      <a className="skip-link" href="#workspace-content">Skip to content</a>
+      <header className="workspace-header">
+        <div className="masthead">
+          <button className="masthead-logo" aria-label="Falkrona overview" onClick={() => setActiveTab("dashboard")}>
+            <FalkronaLogo onDark />
           </button>
+          <nav className="masthead-nav" aria-label="Workspace sections">{sections.map(section => {
+            const selected = activeTab === section.id || section.id === "brand" && activeTab === "materials" || section.id === "calendar" && activeTab === "studio";
+            return <button key={section.id} type="button" aria-current={selected ? "page" : undefined} onClick={() => setActiveTab(section.id)}><section.icon size={22} aria-hidden="true"/><span>{language === "ar" ? section.arabic : section.label}</span>{section.id === "results" && newReports > 0 && <span className="masthead-count" aria-label={`${newReports} new reports`}>{newReports}</span>}</button>;
+          })}</nav>
+          <div className="masthead-account">
+            <details className="profile-menu"><summary aria-label="Account menu"><span className="avatar-initials">{brandName.slice(0, 2).toUpperCase()}</span><ChevronDown size={16} aria-hidden="true" /></summary><div className="profile-popover"><strong>{brandName}</strong><span>{user.email}</span><button className="icon-button" type="button" onClick={() => setLanguage(language === "en" ? "ar" : "en")}><Languages size={17}/> {language === "en" ? "العربية" : "English"}</button><button className="icon-button" onClick={signOut}><LogOut size={16}/> Sign out</button></div></details>
+          </div>
         </div>
-        <nav className="workspace-tabs" aria-label="Workspace sections">
-          {sections.map(section => <button key={section.id} className={activeTab === section.id || section.id === "brand" && activeTab === "materials" || section.id === "dashboard" && activeTab === "results" ? "active" : ""} type="button" onClick={() => setActiveTab(section.id)} title={section.label} aria-current={activeTab === section.id || section.id === "brand" && activeTab === "materials" || section.id === "dashboard" && activeTab === "results" ? "page" : undefined}><section.icon size={19} /><span className="nav-label">{language === "ar" ? section.arabic : section.label}</span></button>)}
-        </nav>
-        <div className="sidebar-bottom"><button className="sidebar-report" onClick={() => setActiveTab("results")}><BarChart3 size={18}/><span className="nav-label">Weekly reports<small>Every Monday</small></span>{newReports > 0 ? <span className="report-badge" aria-label={`${newReports} new weekly reports`}>{newReports}</span> : <ArrowUpRight size={15}/>}</button><div className="mode"><RadioTower size={14}/><span className="nav-label">{executionMode === "offline_test" ? "Offline preview" : "Powered by Gemini"}</span></div></div>
-      </aside>
-      <main id="operations" dir={language === "ar" ? "rtl" : "ltr"}>
-        <header className="app-topbar">
-          <label className="topbar-brand"><span className="sr-only">Choose brand workspace</span><select aria-label="Brand workspace" value={workspaceId} onChange={event => chooseWorkspace(event.target.value)}>{user.workspaces.map(workspace => <option key={workspace.workspace_id} value={workspace.workspace_id}>{workspace.workspace_id === workspaceId ? brandName : workspace.name}</option>)}</select></label>
-          <div className="topbar-actions"><span className="date-pill"><CalendarDays size={17}/>Week of {new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${currentCairoWeek()}T12:00:00Z`))}</span><button className="icon-button language-toggle" type="button" onClick={() => setLanguage(language === "en" ? "ar" : "en")} aria-label="Switch interface language" title="Switch interface language"><Languages size={17}/>{language.toUpperCase()}</button><span className={`service-dot status-${health.status}`} title={`Service: ${health.status}`} aria-label={`Service: ${health.status}`}/><details className="profile-menu"><summary aria-label="Account menu"><span className="avatar-initials">{user.email.slice(0, 2).toUpperCase()}</span></summary><div className="profile-popover"><strong>Your account</strong><span>{user.email}</span><button className="icon-button" onClick={signOut}><LogOut size={16}/> Sign out</button></div></details></div>
-        </header>
+      </header>
+      <main id="workspace-content" aria-label="Brand workspace">
         <div className="workspace-page">
-          <div className="page-intro"><div><h1>{activeTab === "dashboard" ? (language === "ar" ? "أهلاً بك في فالكرونا" : `${greeting}.`) : pageTitle}</h1><p>{activeTab === "dashboard" ? `Here’s what’s happening with ${brandName} this week.` : subtitles[activeTab]}</p></div>{activeTab === "dashboard" && <button className="icon-button refresh-overview" aria-label="Refresh dashboard" onClick={() => {setDashboardRefresh(value => value + 1); void loadPhase3();}}><RefreshCw size={17}/></button>}</div>
-          {activeTab === "dashboard" && <DashboardView key={`${workspaceId}:${dashboardRefresh}`} workspaceId={workspaceId} branding={branding} hasProduct={productPhotos.length > 0} navigate={setActiveTab} openPost={openSavedPost}/>}
+          <div className="page-intro"><div><div className="page-context">
+              <div className="workspace-chip"><Building2 size={19} aria-hidden="true" />
+                {user.workspaces.length > 1 ? <><select aria-label="Brand workspace" value={workspaceId} onChange={event => chooseWorkspace(event.target.value)}>{user.workspaces.map(workspace => <option key={workspace.workspace_id} value={workspace.workspace_id}>{workspace.workspace_id === workspaceId ? brandName : workspace.name}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></> : <span>{brandName}</span>}
+              </div>
+              {executionMode === "offline_test" && <span className="preview-label">Preview</span>}
+            </div><h1>{pageTitle}</h1></div>{activeTab === "dashboard" && <button className="icon-button refresh-overview" aria-label="Refresh overview" onClick={() => {setDashboardRefresh(value => value + 1); void loadPhase3();}}><RefreshCw size={17}/></button>}</div>
+          {activeTab === "dashboard" && <DashboardView key={`${workspaceId}:${dashboardRefresh}`} workspaceId={workspaceId} branding={branding} hasProduct={productPhotos.length > 0} navigate={destination => { if (destination === "calendar") setPlanWeek(currentCairoWeek()); setActiveTab(destination); }} openPost={(...args) => {setPlanWeek(currentCairoWeek()); openSavedPost(...args);}}/>}
         {phaseError && <p className="form-error phase-error" role="alert">{phaseError}</p>}
         {["brand", "materials"].includes(activeTab) && <nav className="brand-subnav" aria-label="Brand setup"><button className={activeTab === "brand" ? "selected" : ""} onClick={() => setActiveTab("brand")}>Brand details</button><button className={activeTab === "materials" ? "selected" : ""} onClick={() => setActiveTab("materials")}>Product photos</button></nav>}
         {activeTab === "results" && <ResultsView key={workspaceId} workspaceId={workspaceId} csrf={csrf} canEdit={workspaceRole === "owner" || workspaceRole === "editor"} openCalendar={() => setActiveTab("calendar")} />}
-        {activeTab === "brand" && <BrandingView key={workspaceId} workspaceId={workspaceId} csrf={csrf} canEdit={workspaceRole === "owner" || workspaceRole === "editor"} onSaved={(value) => { setBranding(value); void loadPhase3(); }} openPlan={() => setActiveTab("calendar")} />}
+        {activeTab === "brand" && <BrandingView key={workspaceId} workspaceId={workspaceId} csrf={csrf} canEdit={workspaceRole === "owner" || workspaceRole === "editor"} onSaved={(value) => { setBranding(value); void loadPhase3(); }} nextLabel={productPhotos.length ? "Plan my posts" : "Add product photos"} openPlan={() => setActiveTab(productPhotos.length ? "calendar" : "materials")} />}
         {activeTab === "materials" && <section className="queue" aria-labelledby="assets-title">
-          <div className="section-heading"><div><h2 id="assets-title">Add a product photo</h2></div></div>
+          <h2 id="assets-title" className="sr-only">Product photos</h2>
           <div className="product-upload-area">
-            <form className="tool-panel" onSubmit={submitAsset}><div className="tool-title"><Image size={18} /><div><strong>Product photos</strong><span>Add a real photo of your product</span></div></div><label>File<input name="file" type="file" required accept=".png,.jpg,.jpeg,.webp" /></label><button className="primary" disabled={busy === "asset"} type="submit"><Upload size={16} />{busy === "asset" ? "Uploading..." : "Add to gallery"}</button></form>
+            <form className="tool-panel" onSubmit={submitAsset}><div className="tool-title"><Image size={18} /><div><strong>Product photos</strong><span>Add a real photo of your product</span></div></div><label>File<input name="file" type="file" required accept=".png,.jpg,.jpeg,.webp" /></label><button className="primary" disabled={busy === "asset"} type="submit"><Upload size={16} />{busy === "asset" ? "Uploading..." : "Upload photo"}</button></form>
             <details><summary>Have a product catalog? Import a file</summary><form className="catalog-import" onSubmit={submitImport}><input name="dedupe_key" type="hidden" value={`catalog-${Date.now()}`} /><label>CSV or Excel catalog<input name="file" type="file" required accept=".csv,.xlsx" /></label><button className="icon-button" disabled={busy === "import"} type="submit"><Upload size={16} />{busy === "import" ? "Previewing..." : "Preview import"}</button></form></details>
           </div>
-          <div className="product-gallery"><div className="section-heading"><h2>Product photos</h2><span>{productPhotos.length} photo{productPhotos.length === 1 ? "" : "s"}</span></div>{productPhotos.length === 0 ? <div className="empty-state">Add your first product photo above.</div> : <div className="product-grid">{productPhotos.map(asset => <figure className="product-card" key={asset.id}><AssetImage workspaceId={workspaceId} assetId={asset.id} alt={asset.name}/><figcaption>{asset.name}<small>{Math.ceil(asset.size / 1024)} KB</small></figcaption></figure>)}</div>}</div>
+          <div className="product-gallery"><div className="section-heading"><h2>Saved photos</h2><span>{productPhotos.length} photo{productPhotos.length === 1 ? "" : "s"}</span></div>{productPhotos.length === 0 ? <p className="muted">No product photos yet.</p> : <div className="product-grid">{productPhotos.map(asset => <figure className="product-card" key={asset.id}><AssetImage workspaceId={workspaceId} assetId={asset.id} alt={asset.name}/><figcaption>{asset.name}</figcaption></figure>)}</div>}</div>
+          {Boolean(branding?.ready && productPhotos.length) && <div className="product-next"><button className="primary" onClick={() => setActiveTab("calendar")}>Open content plan</button></div>}
           <div className="asset-purpose-groups">{([['logo','Logos'],['reference','Design references'],['document','Documents']] as const).map(([purpose,label])=>{const group=assets.filter(asset=>asset.purpose===purpose&&asset.source==='upload');return group.length>0&&<details key={purpose}><summary>{label} <span>{group.length}</span></summary><div className="product-grid">{group.map(asset=><figure className="product-card" key={asset.id}>{asset.mime_type.startsWith('image/')&&<AssetImage workspaceId={workspaceId} assetId={asset.id} alt={asset.name}/>}<figcaption>{asset.name}<small>{label}</small></figcaption></figure>)}</div></details>;})}</div>
         </section>}
-        {activeTab === "calendar" && <CalendarView key={workspaceId} workspaceId={workspaceId} csrf={csrf} assets={assets} canEdit={workspaceRole === "owner" || workspaceRole === "editor"} canApprove={workspaceRole === "owner"} openBrand={() => setActiveTab("brand")} openStudio={(planId, itemId, platform, schedule) => { setStudioSelection({ planId, itemId, platform, schedule }); setActiveTab("studio"); }} />}
+        {activeTab === "calendar" && <CalendarView key={workspaceId} week={planWeek} setWeek={setPlanWeek} workspaceId={workspaceId} csrf={csrf} assets={assets} canEdit={workspaceRole === "owner" || workspaceRole === "editor"} canApprove={workspaceRole === "owner"} brandReady={Boolean(branding?.ready)} openBrand={() => setActiveTab("brand")} openProducts={() => setActiveTab("materials")} openAccounts={() => setActiveTab("social")} openStudio={openSavedPost} />}
         {activeTab === "studio" && <StudioView key={workspaceId} workspaceId={workspaceId} csrf={csrf} selection={studioSelection} assets={assets} branding={branding} openBrand={() => setActiveTab("brand")} refreshAssets={loadPhase3} canEdit={workspaceRole === "owner" || workspaceRole === "editor"} canApprove={workspaceRole === "owner"} openCalendar={() => setActiveTab("calendar")} />}
         {activeTab === "social" && <section className="queue" aria-labelledby="social-title">
-          <div className="section-heading"><div><p className="eyebrow">SOCIAL CONNECTIONS</p><h2 id="social-title">Your social accounts</h2></div><span>{visibleSocialConnections.filter((item) => item.account_id && item.status !== "disconnected").length} account(s)</span></div>
-          <p className="muted social-disclosure">Connect your accounts for daily post tracking and weekly results. Your logo and design example are uploaded in Branding.</p>
+          <ImageConnection />
+          <div className="section-heading"><div><h2 id="social-title">Connected pages</h2></div><span>{visibleSocialConnections.filter((item) => item.account_id && item.status !== "disconnected").length} account(s)</span></div>
+          <p className="muted social-disclosure">Connect a Facebook Page to publish posts and see results.</p>
           {socialError && <p className="form-error social-error" role="alert">{socialError}</p>}
           {!metaReadAvailable && <p className="muted">Account connections are unavailable in this preview. You can add a post export below.</p>}
           <div className="phase-grid social-grid">{socialPlatforms.map((platform) => <article className="tool-panel social-panel" key={platform.id}>
@@ -673,7 +679,7 @@ export function App() {
               {workspaceOwner && connection.status !== "disconnected" && <button className="icon-button" type="button" disabled={busy === connection.id} onClick={() => void disconnectMeta(connection.id)}>Disconnect</button>}
             </div>)}
             <p className="muted">{platform.id === "instagram" ? "Use a professional Instagram account linked to your Facebook Page." : "Connect a Page you manage to track its published posts."}</p>
-            {workspaceOwner && (platform.id === "facebook_pages" ? <button className="primary" type="button" disabled={!metaReadAvailable || busy === "meta"} onClick={() => void beginFacebook()}><Facebook size={16} /> Connect Facebook</button> : <><p className="muted">Instagram connection setup is pending.</p><button className="primary" type="button" disabled><Instagram size={16} /> Connect Instagram</button></>)}
+            {workspaceOwner && (platform.id === "facebook_pages" ? <button className="primary" type="button" disabled={!metaReadAvailable || busy === "meta"} onClick={() => void beginFacebook()}><Facebook size={16} /> Connect Facebook</button> : <><span className="content-status draft">Coming later</span></>)}
           </article>)}</div>
           <details className="social-history" open={visibleSocialImport ? true : undefined}><summary>Post history and optional imports</summary><div className="section-heading social-import-heading"><div><h2>Post history</h2></div><span>{visibleSocialPosts.length} imported post(s) <a className="icon-button social-export" href={`/api/v1/workspaces/${workspaceId}/social/posts/export`} download="falkrona-social-posts.csv" title="Export social posts as CSV"><Download size={16} /> Export CSV</a></span></div>
           <div className="phase-grid social-grid">

@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from .creative import CreativeError, _layer, validate_scene
 from .database import set_workspace_context
-from .design_direction import DesignDirection, context_snapshot
+from .design_direction import DesignDirection, context_snapshot, saved_skill_hash
 from .models import AgentRun, DesignVersion, WorkspaceAsset
 
 PROVIDERS = {"gemini": "https://gemini.google.com/app", "chatgpt": "https://chatgpt.com/"}
@@ -32,7 +32,9 @@ class BrowserImageService:
         return row
 
     def _current(self, session, workspace, row):
-        _, digest = context_snapshot(session, workspace, row.checkpoint["design_id"], row.checkpoint["inputs"], self.storage)
+        _, digest = context_snapshot(session, workspace, row.checkpoint["design_id"], row.checkpoint["inputs"], self.storage,
+                                     editorial_version=row.checkpoint.get("editorial_version"),
+                                     skill_hash=saved_skill_hash(row.redacted_prompt, row.checkpoint.get("editorial_version")))
         if digest != row.checkpoint.get("context_digest"):
             raise CreativeError("direction_stale", "Your brand, brief or images changed. Prepare a new direction.")
 

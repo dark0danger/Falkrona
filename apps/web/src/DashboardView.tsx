@@ -1,4 +1,5 @@
-import { ArrowRight, BarChart3, CalendarDays, Check, ChevronRight, Facebook, Instagram, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { CampaignArt } from "./CampaignArt";
+import { ArrowRight, Check, ChevronRight, Facebook, Instagram, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Branding } from "./BrandingView";
 import type { CalendarPlan } from "./PlanImages";
@@ -52,35 +53,26 @@ export function DashboardView({ workspaceId, branding, hasProduct, navigate, ope
   const dateLabel = new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${week}T12:00:00Z`));
   return <section className="dashboard-view" aria-label="Brand dashboard" aria-busy={!snapshot && !error}>
     {error && <p className="form-error" role="alert">{error} <button className="text-button" onClick={() => setRefresh(value => value + 1)}>Try again</button></p>}
-    <div className="dashboard-stats">
-      {[{ label: "Posts planned", value: snapshot?.plan?.items.length ?? 0, note: `Week of ${dateLabel}`, accent: "coral", icon: CalendarDays },
-        { label: "Designs ready", value: ready, note: ready ? "Ready to download and share" : "Your next idea starts here", accent: "green", icon: Sparkles },
-        { label: "Social accounts", value: accounts.length, note: accounts.length ? "Connected to your brand" : "Connect to track your posts", accent: "gold", icon: Facebook }].map(stat => <article className={`dashboard-stat accent-${stat.accent}`} key={stat.label}>
-        <div><span>{stat.label}</span><strong>{snapshot ? stat.value : "—"}</strong><small>{stat.note}</small></div><stat.icon size={22} aria-hidden="true" />
-      </article>)}
-    </div>
-    <div className="dashboard-middle">
-      <article className="dashboard-card performance-card">
-        <div className="card-heading"><h2>Post performance</h2><button className="text-button" onClick={() => navigate("results")}>View reports <ArrowRight size={15} /></button></div>
-        {performance.posts.length ? <><p className="muted">Likes / reactions · latest report, week of {performance.report?.week_start}</p><div className="performance-bars">{performance.posts.slice(0, 4).map((post, index) => <div className="performance-row" key={post.post_id}>
-          <div><span title={post.text}>{post.text || `Post ${index + 1}`}</span><strong>{post.counts.reactions?.toLocaleString()}</strong></div>
-          <div className="performance-track"><span style={{ width: `${(post.counts.reactions ?? 0) / maximum * 100}%` }} /></div>
-        </div>)}</div><p className="chart-footnote">Totals since publication, measured in your latest report.</p></> : <div className="performance-empty">
-          <span className="empty-icon"><BarChart3 size={25} /></span><h3>Your results will grow here</h3><p>Once your posts have measurements, you’ll see how they’re doing in your weekly report.</p>
-          <button className="icon-button" onClick={() => navigate(accounts.length ? "results" : "social")}>{accounts.length ? "Open weekly reports" : "Connect an account"}<ArrowRight size={15} /></button>
-        </div>}
-      </article>
-      <article className="dashboard-card brand-checklist">
-        <div className="card-heading"><h2>Your brand at a glance</h2><span className="quiet-label">{steps.filter(step => step.done).length} / 3 ready</span></div>
-        {steps.map(step => <button className="checklist-row" key={step.title} onClick={() => navigate(step.destination)}>
-          <span className={`checklist-icon ${step.done ? "complete" : ""}`}>{step.done ? <Check size={17} /> : <Plus size={17} />}</span>
-          <span><strong>{step.title}</strong><small>{step.detail}</small></span><ChevronRight size={17} />
-        </button>)}
-        <div className="brand-next"><Sparkles size={17} /><p>{snapshot?.plan ? "Your week is taking shape. Keep creating, and Falkrona will track the results." : "A few brand details. A whole week of ideas."}</p></div>
-      </article>
-    </div>
-    <div className="section-heading content-heading"><div><h2>This week’s content</h2><p className="muted">Your ideas, all in one place.</p></div><button className="primary" onClick={() => navigate(branding?.ready ? "calendar" : "brand")}><Plus size={18} />{snapshot?.plan ? "Open content plan" : "Plan your week"}</button></div>
-    {!snapshot && !error ? <div className="dashboard-loading" role="status"><RefreshCw size={18} /> Loading your brand overview…</div> : !snapshot?.plan?.items.length ? <div className="dashboard-card content-empty"><CalendarDays size={28} /><h3>A fresh week starts with a good plan</h3><p>Let Gemini turn your brand and products into a week of post ideas.</p><button className="text-button" onClick={() => navigate(branding?.ready ? "calendar" : "brand")}>Get started <ArrowRight size={16} /></button></div> : <div className="dashboard-posts">
+    {snapshot && <div className="overview-grid">
+      <div className="campaign-hero">
+        <div className="campaign-copy">
+          <span className="campaign-kicker"><i/>{!branding?.ready || !hasProduct ? "SETUP" : `WEEK OF ${dateLabel.toUpperCase()}`}</span>
+          <h2>{!branding?.ready ? "Give your brand a starting point." : !hasProduct ? "Put your product in the picture." : snapshot.plan ? (ready === snapshot.plan.items.length && ready > 0 ? "Your designs are ready." : "Your week is taking shape.") : "A week of content, ready to plan."}</h2>
+          <p>{!branding?.ready ? "Add your logo and tell us who you sell to." : !hasProduct ? "Add a clear photo of the product you want to feature." : snapshot.plan ? `${ready} of ${snapshot.plan.items.length} designs ready to review.` : "Create posts for your brand, then review the week in one place."}</p>
+          <button className="primary" onClick={() => navigate(!branding?.ready ? "brand" : !hasProduct ? "materials" : "calendar")}>
+            {!branding?.ready ? "Set up my brand" : !hasProduct ? "Add a product photo" : snapshot.plan ? "Open my plan" : "Create my week"}<ArrowRight size={17}/>
+          </button>
+        </div>
+        <CampaignArt/>
+      </div>
+      <section className="setup-card" aria-labelledby="setup-title">
+        <div className="setup-heading"><h2 id="setup-title">Brand setup</h2><span>{steps.filter(step=>step.done).length} / 3</span></div>
+        <div className="setup-meter" aria-hidden="true">{steps.map(step=><span key={step.title} data-done={step.done}/>)}</div>
+        {steps.map((step,index)=><button className="setup-item" key={step.title} onClick={()=>navigate(step.destination)}><span className="setup-step" data-done={step.done}>{step.done ? <Check size={16} aria-label="Complete"/> : index+1}</span><span><strong>{step.title}</strong><small>{step.detail}</small></span><ChevronRight size={16} aria-hidden="true"/></button>)}
+      </section>
+    </div>}
+    {snapshot?.plan && <div className="section-heading content-heading"><h2>This week’s posts</h2><span className="quiet-label">{snapshot.plan.items.length} posts</span></div>}
+    {!snapshot && !error ? <div className="dashboard-loading" role="status"><RefreshCw size={18} /> Loading your brand overview…</div> : !snapshot?.plan?.items.length ? null : <div className="dashboard-posts">
       {snapshot.plan.items.map(item => {
         const entry = snapshot.entries.find(image => image.item_id === item.id);
         const isReady = entry?.status === "ready";
@@ -93,5 +85,9 @@ export function DashboardView({ workspaceId, branding, hasProduct, navigate, ope
         </button>;
       })}
     </div>}
+    {performance.posts.length > 0 && <article className="dashboard-card performance-card">
+      <div className="card-heading"><h2>Latest results</h2><button className="text-button" onClick={()=>navigate("results")}>Weekly report <ArrowRight size={15}/></button></div>
+      <div className="performance-bars">{performance.posts.slice(0,3).map(post=><div className="performance-row" key={post.post_id}><div><span>{post.text}</span><strong>{post.counts.reactions?.toLocaleString()} reactions</strong></div><div className="performance-track"><span style={{width:`${(post.counts.reactions??0)/maximum*100}%`}}/></div></div>)}</div>
+    </article>}
   </section>;
 }

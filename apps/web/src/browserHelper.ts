@@ -2,20 +2,29 @@ export type ImageApp = "gemini" | "chatgpt";
 export type BrowserPacket = {run_id: string; workspace_id: string; design_id: string; provider: ImageApp;
   url: string; nonce: string; expires_at: string; prompt: string;
   attachments: Array<{role: string; name: string; mime_type: string; data: string}>};
-type HelperResult = {connected?: boolean; provider?: ImageApp; helper_version?: string; stage?: string; image?: string; error?: string};
+export type HelperResult = {connected?: boolean; provider?: ImageApp; helper_version?: string; stage?: string; image?: string; error?: string};
 
 export function requireCurrentHelper(version?: string) {
   const patch = /^0\.1\.(\d+)$/.exec(version ?? "");
-  if (!patch || Number(patch[1]) < 3)
-    throw new Error("Update Falkrona Browser Helper to 0.1.3 or later, click Reload in Extensions, then refresh Falkrona.");
+  if (!patch || Number(patch[1]) < 7)
+    throw new Error("Update Falkrona Browser Helper to 0.1.7 or later from Accounts, click Reload in Extensions, then refresh Falkrona.");
 }
 
-export function helperRequest(action: "status" | "start" | "poll", packet?: BrowserPacket, runId?: string, resumeOnly = false): Promise<HelperResult> {
+export async function checkImageConnection(provider?: ImageApp): Promise<HelperResult> {
+  const status = await helperRequest("status");
+  if (!status.connected) throw new Error("Connect your image app in Accounts before creating posts.");
+  requireCurrentHelper(status.helper_version);
+  if (provider && status.provider !== provider)
+    throw new Error(`Your helper is connected to ${status.provider === "gemini" ? "Gemini" : "ChatGPT"}. Choose that image app in Plan preferences, or reconnect in Accounts.`);
+  return status;
+}
+
+export function helperRequest(action: "status" | "start" | "poll" | "open", packet?: BrowserPacket, runId?: string, resumeOnly = false): Promise<HelperResult> {
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     const timer = window.setTimeout(() => {
       window.removeEventListener("message", listener);
-      reject(new Error("No browser helper responded. Open Falkrona in Chrome or Edge, then click the Falkrona extension and choose Allow and connect."));
+      reject(new Error("Your image connection isn’t ready. Open Accounts to connect the browser helper, then try again. Use the same Chrome or Edge browser."));
     }, 8000);
     function listener(event: MessageEvent) {
       if (event.source !== window || event.origin !== location.origin || event.data?.channel !== "falkrona-helper-response" || event.data.id !== id) return;

@@ -18,6 +18,7 @@ def finished(flow):
         'photo_asset_id':flow.inputs['photo_asset_id'],'language':'en','provider':'chatgpt','consent':True}).json()['entries']
     for index,entry in enumerate(entries):
         direction=deepcopy(DIRECTION);direction['image_prompt']=flow.content()['posts'][index]['visual_concept']['scene']
+        direction['image_prompt'] += f" Headline: {direction['headline']} CTA: {direction['cta']}"
         flow.execute(lambda *_:{'text':json.dumps(direction),'model_calls':1})
         run=f"{flow.base}/agent-runs/{entry['run_id']}"
         packet=flow.client.post(run+'/browser-packet',headers=flow.csrf,json={'provider':'chatgpt','consent':True})
@@ -145,6 +146,7 @@ def test_regenerate_one_changes_concept_and_keeps_peers_language_cta_and_history
     duplicate=flow.client.post(path+'/posts/'+first['item_id']+'/regenerate',headers=flow.csrf,json={'design_id':first['imported_design_id']})
     assert duplicate.status_code==422
     direction=deepcopy(DIRECTION);direction['image_prompt']='A macro detail of the sealed bag printed texture on folded white paper with a dramatically different immersive crop.'
+    direction['image_prompt'] += f" Headline: {direction['headline']} CTA: {direction['cta']}"
     flow.execute(lambda *_:{'text':json.dumps(direction),'model_calls':1})
     runpath=flow.base+'/agent-runs/'+new['run_id']
     with flow.sessions() as session:
@@ -171,6 +173,7 @@ def test_regeneration_cannot_reuse_rejected_prompt_with_new_words(flow):
     plan,path,state=finished(flow);first=state['entries'][0]
     response=flow.client.post(path+'/posts/'+first['item_id']+'/regenerate',headers=flow.csrf,json={'design_id':first['imported_design_id']})
     direction=deepcopy(DIRECTION);direction['headline']='Another headline';direction['image_prompt']=flow.content()['posts'][0]['visual_concept']['scene']
+    direction['image_prompt'] += f" Headline: {direction['headline']} CTA: {direction['cta']}"
     flow.execute(lambda *_:{'text':json.dumps(direction),'model_calls':1})
     run=flow.client.get(flow.base+'/agent-runs/'+response.json()['entries'][0]['run_id']).json()
     assert run['status']=='failed' and run['last_error']=='repeated_visual_direction'
