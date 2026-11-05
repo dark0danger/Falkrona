@@ -5,6 +5,7 @@ import hashlib
 import base64
 from io import BytesIO
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -23,6 +24,8 @@ from .models import AgentRun, WeeklyPlan, WorkspaceAsset, utc_now
 from .visual_planning import repeats_image_prompt
 from .phase4 import Phase4Error, classify_and_redact
 from .provider_policy import ModelRequest, admit_model_request
+
+logger = logging.getLogger(__name__)
 
 
 class HermesCreativeExecutor:
@@ -249,6 +252,7 @@ class CreativeDirectionHandler:
             self.store.complete(claim.id, claim.lease_owner)
         except (Phase4Error, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
             code = getattr(exc, "code", "invalid_direction")
+            logger.warning("Creative job %s ended with %s", claim.kind, code)
             with self.sessions() as session, session.begin():
                 set_workspace_context(session, workspace)
                 row = session.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace, AgentRun.job_id == claim.id))

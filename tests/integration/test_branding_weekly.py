@@ -65,6 +65,8 @@ class BrandingWeeklyTests(unittest.TestCase):
         first = self.client.post(path, headers=self.csrf, json={}).json()
         repeated = self.client.post(path, headers=self.csrf, json={}).json()
         self.assertEqual(first["survey_run_id"], repeated["survey_run_id"])
+        self.assertIsNone(first["survey"])
+        self.assertEqual(first["starter_survey"], STARTER)
         sessions = build_session_factory(self.engine); store = JobStore(sessions, workspace_id=self.workspace)
         calls = []
         def executor(prompt, model, progress):
@@ -79,6 +81,29 @@ class BrandingWeeklyTests(unittest.TestCase):
         invalid = {"questions": [STARTER["questions"][0]] * 4}
         with self.assertRaises(ValueError):
             BrandingSurvey.model_validate(invalid)
+
+    def test_starter_questions_remain_available_when_gemini_survey_fails(self):
+        settings = replace(self.client.app.state.settings, runtime=RuntimeConfig(
+            execution_mode=ExecutionMode.GEMINI_FREE, model_provider=ModelProvider.GEMINI), gemini_model="fixture")
+        self.client.close()
+        self.client = TestClient(create_app(settings, engine=self.engine), base_url="https://testserver")
+        self.csrf = {"X-CSRF-Token": self.client.post("/api/v1/session", json={
+            "email": "owner@example.test", "password": "owner-password-long"}).json()["csrf_token"]}
+        path = f"{self.base}/branding"
+        queued = self.client.post(f"{path}/survey", headers=self.csrf, json={})
+        self.assertEqual(queued.status_code, 202, queued.text)
+        sessions = build_session_factory(self.engine)
+        store = JobStore(sessions, workspace_id=self.workspace)
+
+        def executor(prompt, model, progress):
+            return {"text": "{}", "model_calls": 1}
+
+        handler = CreativeDirectionHandler(sessions, store, self.client.app.state.phase4, settings.runtime, executor)
+        self.assertTrue(Worker("survey", store, self.client.app.state.storage, creative_handler=handler).process_one())
+        failed = self.client.get(path).json()
+        self.assertEqual(failed["survey_status"], "failed")
+        self.assertEqual(failed["starter_survey"], STARTER)
+        self.assertTrue(complete_branding(self.client, self.base, self.csrf)["ready"])
 
     def test_daily_counts_and_restart_safe_weekly_report_delivery(self):
         sessions = build_session_factory(self.engine); store = JobStore(sessions, workspace_id=self.workspace)

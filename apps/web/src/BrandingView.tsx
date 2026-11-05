@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
+import { csrfFetch } from "./csrfFetch";
 import "./branding.css";
+
+type Survey = { questions: Array<{ key: string; question: string; examples: string[] }> };
 
 export type Branding = {
   ready: boolean; answers: Record<string, string>; logo_asset_id: string | null; reference_asset_id: string | null;
   public_context_confirmed: boolean; survey_source: string; survey_status: string | null;
-  survey: { questions: Array<{ key: string; question: string; examples: string[] }> } | null;
+  survey: Survey | null; starter_survey?: Survey;
 };
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { credentials: "include", ...options });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.detail?.message ?? "We couldn't save this. Please try again.");
+  const response = await csrfFetch(url, { credentials: "include", ...options });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result === null) throw new Error(result?.detail?.message ?? "Falkrona couldn't complete the request. Please try again.");
   return result;
 }
 
@@ -37,27 +40,69 @@ export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan, ne
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [saved, setSaved] = useState(false);
+  const [questions, setQuestions] = useState<Survey | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const base = `/api/v1/workspaces/${workspaceId}/branding`;
   useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        let value = await request<Branding>(base);
-        if (!active) return;
-        setAnswers(value.answers); setLogo(value.logo_asset_id); setReference(value.reference_asset_id);
-        setPublicContext(value.public_context_confirmed); setSaved(value.ready); setData(value); onSaved(value);
-        if (!value.survey && canEdit && !value.survey_status) {
-          value = await request<Branding>(`${base}/survey`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: "{}" });
-          if (active) setData(value);
+    const controller = new AbortController();
+    let poll: number | undefined;
+    let deadline: number | undefined;
+    let finished = false;
+    const signal = controller.signal;
+
+    function showQuestions(survey?: Survey) {
+      if (finished || signal.aborted) return;
+      finished = true;
+      window.clearTimeout(poll);
+      window.clearTimeout(deadline);
+      if (survey) setQuestions(survey);
+      else setError("Your brand questions are temporarily unavailable. Please try again.");
+    }
+
+    function checkSurvey(value: Branding) {
+      if (finished || signal.aborted) return;
+      if (value.survey) return showQuestions(value.survey);
+      if (["failed", "cancelled"].includes(value.survey_status ?? "")) return showQuestions(value.starter_survey);
+      poll = window.setTimeout(async () => {
+        try {
+          checkSurvey(await request<Branding>(base, { signal }));
+        } catch {
+          showQuestions(value.starter_survey);
         }
-      } catch (reason) { if (active) setError(String(reason).replace(/^Error: /, "")); }
+      }, 2000);
+    }
+
+    async function load() {
+      setError("");
+      let value: Branding;
+      try {
+        value = await request<Branding>(base, { signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) });
+      } catch (reason) {
+        if (!signal.aborted) setError(reason instanceof Error && reason.name !== "TimeoutError" ? reason.message : "Loading your brand took too long.");
+        return;
+      }
+      if (signal.aborted) return;
+      setAnswers(value.answers); setLogo(value.logo_asset_id); setReference(value.reference_asset_id);
+      setPublicContext(value.public_context_confirmed); setSaved(value.ready); setData(value); onSaved(value);
+      if (value.survey || !canEdit || value.ready) return showQuestions(value.survey ?? value.starter_survey);
+
+      // Keep the same questions for this visit once the owner can start typing.
+      deadline = window.setTimeout(() => showQuestions(value.starter_survey), 8000);
+      try {
+        if (!value.survey_status) {
+          const queued = await request<Branding>(`${base}/survey`, { method: "POST", signal,
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: "{}" });
+          checkSurvey(queued);
+        } else {
+          checkSurvey(value);
+        }
+      } catch {
+        showQuestions(value.starter_survey);
+      }
     }
     void load();
-    const timer = window.setInterval(() => {
-      void request<Branding>(base).then((value) => { if (active) { setData(value); if (value.survey || ["failed", "cancelled"].includes(value.survey_status ?? "")) window.clearInterval(timer); } }).catch(() => {});
-    }, 4000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [workspaceId, canEdit, csrf]);
+    return () => { controller.abort(); window.clearTimeout(poll); window.clearTimeout(deadline); };
+  }, [workspaceId, canEdit, csrf, loadAttempt]);
 
   async function upload(role: "logo" | "reference", file?: File) {
     if (!file) return; setBusy(role); setError(""); setSaved(false);
@@ -81,12 +126,10 @@ export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan, ne
   return <section className="queue branding-view" aria-labelledby="branding-title">
     <div className="section-heading"><div><h2 id="branding-title">Brand essentials</h2></div><span>{saved ? "Ready to create" : "A few simple steps"}</span></div>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {!data?.survey && <p role="status">{data?.survey_status === "failed" ? "Your brand questions couldn't be prepared." : "Preparing your brand questions…"}</p>}
-    {data?.survey_status === "failed" && canEdit && <button className="icon-button" type="button" onClick={() => {
-      void request<Branding>(`${base}/survey`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: JSON.stringify({ retry_failed: true }) }).then(setData).catch((reason) => setError(String(reason)));
-    }}>Try preparing questions again</button>}
-    {data?.survey && <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <div className="branding-questions">{data.survey.questions.map((question, index) => <div className="branding-question" key={question.key}>
+    {!questions && (error ? <button className="icon-button" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</button>
+      : <p role="status">Preparing your brand questions…</p>)}
+    {questions && <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <div className="branding-questions">{questions.questions.map((question, index) => <div className="branding-question" key={question.key}>
         <label htmlFor={`brand-${question.key}`}><span className="step-number">{index + 1}</span>{question.question}</label>
         {question.key === "brand_name" ? <input id={`brand-${question.key}`} required maxLength={200} disabled={!canEdit || Boolean(busy)} value={answers[question.key] ?? ""} onChange={(event) => { setSaved(false); setAnswers({ ...answers, [question.key]: event.target.value }); }} />
           : <textarea id={`brand-${question.key}`} required maxLength={1000} rows={2} disabled={!canEdit || Boolean(busy)} value={answers[question.key] ?? ""} onChange={(event) => { setSaved(false); setAnswers({ ...answers, [question.key]: event.target.value }); }} />}
@@ -100,7 +143,7 @@ export function BrandingView({ workspaceId, csrf, canEdit, onSaved, openPlan, ne
       <label className="branding-public"><input type="checkbox" checked={publicContext} disabled={!canEdit || Boolean(busy)} onChange={(event) => { setPublicContext(event.target.checked); setSaved(false); }} /> These brand details can be shared publicly. Don't include private customer information.</label>
       <div className="brand-save studio-actions">{saved ? <button className="primary" type="button" onClick={openPlan}>{nextLabel} →</button> : canEdit && <button className="primary" type="submit" disabled={!complete || Boolean(busy)}>{busy ? "Saving…" : "Save my brand"}</button>}</div>
 
-      {data.survey_source === "offline_starter" && <p className="muted">Offline preview: these are starter questions. Connected mode prepares the questions with Gemini.</p>}
+      {data?.survey_source === "offline_starter" && <p className="muted">Offline preview: these are starter questions. Connected mode prepares the questions with Gemini.</p>}
     </form>}
   </section>;
 }

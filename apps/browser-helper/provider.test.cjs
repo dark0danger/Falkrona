@@ -2,7 +2,8 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const {normalizePrompt, promptMatches} = require('./provider-dom.js');
+require('./provider-dom.js');
+const {normalizePrompt, promptMatches} = globalThis.falkronaProviderDOM;
 
 function fixture({submitted = false, missingAttachment = false, changedPrompt = false, fresh=false, hydration=false, stale=false, videoFirst=false, ignoredFirst=false, partialUpload=false, menuDelayed=false, menuUnavailable=false, duplicatePreview=false, transientPreview=false, distinctImages=false} = {}) {
   let listener, clicks = 0, fetched = 0, uploads=0, clock = Date.now();

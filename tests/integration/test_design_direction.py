@@ -2,6 +2,7 @@ from dataclasses import replace
 from io import BytesIO
 import json
 import base64
+from pathlib import Path
 import unittest
 
 from fastapi.testclient import TestClient
@@ -175,7 +176,8 @@ class DirectionTests(unittest.TestCase):
         import zipfile
         with zipfile.ZipFile(BytesIO(download.content)) as helper:
             manifest = json.loads(helper.read("manifest.json"))
-            self.assertEqual(manifest["version"], "0.1.6")
+            source = Path(__file__).resolve().parents[2] / "apps/browser-helper/manifest.json"
+            self.assertEqual(manifest, json.loads(source.read_text(encoding="utf-8")))
             self.assertIn("provider-dom.js", helper.namelist())
             self.assertNotIn("cookies", manifest["permissions"])
             self.assertNotIn("host_permissions", manifest)

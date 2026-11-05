@@ -78,6 +78,7 @@ class BrandingService:
                 "reference_asset_id": row.reference_asset_id if row else None,
                 "public_context_confirmed": bool(row and row.public_context_confirmed),
                 "survey": survey or (STARTER if offline else None),
+                "starter_survey": STARTER,
                 "survey_source": "gemini" if survey else "offline_starter" if offline else "pending",
                 "survey_run_id": run.id if run else None,
                 "survey_status": run.status if run else None,

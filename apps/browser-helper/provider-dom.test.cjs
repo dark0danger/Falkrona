@@ -1,6 +1,7 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {normalizePrompt,findSend,messages,promptMatches} = require('./provider-dom.js');
+require('./provider-dom.js');
+const {normalizePrompt,findSend,messages,promptMatches} = globalThis.falkronaProviderDOM;
 global.getComputedStyle = element => ({visibility: element.hidden ? 'hidden' : 'visible'});
 const node = (label, options = {}) => ({textContent: '', disabled: false, getClientRects: () => [1],
   getAttribute: name => name === 'aria-label' ? label : options[name] ?? null, ...options});
