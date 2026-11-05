@@ -11,13 +11,17 @@ This layout runs without your laptop hosting Falkrona. Image generation still us
 
 ## 1. Railway
 
-Create a project, add PostgreSQL, then add the Falkrona GitHub repository as a service. Use the **repository root**, the root Dockerfile and `railway.toml`. Attach a persistent volume at `/data` before uploading any assets. Generate a public HTTPS domain for the backend.
+1. In the [Railway dashboard](https://railway.com/dashboard), create an **Empty Project**. On the project canvas choose **New → Database → Add PostgreSQL**.
+2. In the same project choose **New → GitHub Repo**, authorize Railway to access `dark0danger/Falkrona`, and connect `main`. Leave **Root Directory** at the repository root. The checked-in `railway.toml` selects the root `Dockerfile` and configures `/health/ready` as the health check. Leave the start command at its Docker default so the API and workers start together.
+3. Add a **Volume** to the Falkrona backend service and mount it at `/data`. Leave the backend at one replica and turn off Serverless if enabled. The separate PostgreSQL service keeps its own volume.
+4. In the Falkrona backend's **Variables** tab, enter the values below and deploy the staged changes. The first deployment can fail if it starts before the database and variables are ready. Deploy again after configuring them.
+5. In the backend service's **Settings → Networking → Public Networking**, choose **Generate Domain**. If Railway asks for a target port, use the same port as the backend's `PORT` variable. You can explicitly set `PORT=8000` and target `8000`. Copy the HTTPS URL for Vercel.
 
 Set these **backend** variables in Railway:
 
 | Variable | Value |
 | --- | --- |
-| `DATABASE_URL` | Reference PostgreSQL's connection URL using Railway's variable picker. The hosted launcher converts its scheme to the installed psycopg driver. |
+| `DATABASE_URL` | Use `${{Postgres.DATABASE_URL}}` if your database service is named `Postgres`. Otherwise choose the database service's `DATABASE_URL` with Railway's reference picker. |
 | `BRANDPILOT_STORAGE_ROOT` | `/data/storage` |
 | `BRANDPILOT_APP_SECRET_KEY` | A unique random secret of at least 32 characters. Keep it across redeployments. |
 | `BRANDPILOT_CREDENTIAL_ENCRYPTION_KEY` | URL-safe base64 encoding of 32 random bytes. Keep it across redeployments. |
@@ -42,7 +46,9 @@ Open `https://YOUR-BACKEND.up.railway.app/health/ready` and require HTTP 200. Mi
 
 ## 2. Vercel
 
-Import the same repository. Leave **Root Directory at the repository root**, select Vite and use the settings in `vercel.ts`:
+1. In the [Vercel dashboard](https://vercel.com/dashboard), choose **Add New → Project** and import `dark0danger/Falkrona`.
+2. Leave **Root Directory at the repository root**. Choose **Vite** and verify the settings below. The checked-in `vercel.ts` supplies the install, build and output settings.
+3. Add `FALKRONA_BACKEND_URL` under **Environment Variables** for **Production**, then deploy. If you change it later, redeploy for the new value to take effect.
 
 - Install: `npm ci`
 - Build: `npm run build`
@@ -59,9 +65,9 @@ No Gemini key, database credential or app secret belongs in Vercel or a `VITE_*`
 1. Open the Vercel address. Verify `/health/ready` and `/api/status` return backend JSON at this same address.
 2. Use **First-time workspace setup**, create your owner account with your setup token and sign in.
 3. The Railway launcher discovers the new workspace within about five seconds. You do not run a workspace selection command on the host.
-4. Complete Branding and upload a product photo. Existing local data does not transfer automatically; it remains on your computer.
-5. Install the helper from `apps/browser-helper`, open the **Vercel** Falkrona page and use **Allow and connect**. Reconnect whenever moving to a different frontend domain.
-6. Draft one post first. Confirm its design returns to the plan. Review before approving any schedule.
+4. Complete **Brand** and upload a product photo. The hosted database starts empty, so enter your brand details and upload your assets again.
+5. Install Browser Helper **0.1.7** from `apps/browser-helper` or download it from **Accounts → Image creation**. With the **Vercel** Falkrona page active in Chrome or Edge, choose **Allow and connect**, sign in to ChatGPT, then use **Check connection** in Falkrona. Reconnect after changing the frontend domain.
+6. In **Content plan**, choose a future week and set **Posts per week** to **1**. Click **Create my week** and check that the finished design comes back. You can do this before setting up Facebook.
 
 ## 4. Facebook
 
@@ -80,6 +86,6 @@ The callback uses the **Vercel frontend domain**, including the complete path ab
 
 Verify account setup/login/logout, brand saving, logo/product uploads, Arabic or English planning, image return, regeneration, changed posting dates, one-plan approval, scheduled publication and report availability. Test a page refresh and an interrupted generation with **Continue creating designs**. Check that a deployment restart retains images and approved jobs. Keep the same signing/encryption secrets and retain both PostgreSQL and the volume.
 
-Railway API/database resources consume usage. Check the limits and credits on your actual account before leaving services running. Direct image APIs and Instagram publishing remain future work.
+Railway charges usage against your available credits. Check the [Railway trial limits](https://docs.railway.com/pricing/free-trial) and your dashboard balance before relying on the deployment for the whole demo period. Limited Trial accounts have outbound network restrictions, so verify that the backend can reach Gemini and Meta. Check [Vercel's Hobby plan](https://vercel.com/docs/plans/hobby) for personal, noncommercial use.
 
 Official guides: [Railway Dockerfiles](https://docs.railway.com/builds/dockerfiles), [volumes](https://docs.railway.com/volumes), [health checks](https://docs.railway.com/deployments/healthchecks), [Vercel programmatic configuration](https://vercel.com/docs/project-configuration), [external rewrites](https://vercel.com/docs/routing/rewrites).

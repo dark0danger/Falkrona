@@ -1,12 +1,12 @@
 # Falkrona · Your Brand’s Pilot
 
 <p align="center">
-  <img src="docs/assets/falkrona-banner.svg" alt="Falkrona — from brand identity to approved publishing" width="100%" />
+  <img src="docs/assets/falkrona-banner.svg" alt="Falkrona. A week of content, one brand voice." width="100%" />
 </p>
 
 <p align="center">
-  <strong>An agentic marketing assistant for small business owners.</strong><br />
-  Turn your brand identity and product photos into a week of distinct, consistent designs — then approve once to schedule Facebook posts.
+  <strong>Plan, design, and schedule Facebook posts for your small business.</strong><br />
+  Save your brand brief and product photos, create a week of distinct designs, and approve the whole plan in one place.
 </p>
 
 <p align="center">
@@ -40,8 +40,8 @@ Falkrona grew out of a graphic designer’s experience with that problem. It giv
 | --- | --- |
 | **Brand onboarding** | A short brand survey, required transparent logo, and optional design reference. |
 | **Organized assets** | Product photos, logos, design references, and generated artwork have distinct roles. |
-| **Weekly planning** | Gemini drafts a plan from confirmed brand context, the campaign goal, and selected language. |
-| **Complete ad generation** | Gemini writes a detailed prompt for each post; the browser helper asks the selected image app to generate the artwork. |
+| **Weekly planning** | Hermes uses Gemini to draft and review a plan from your brand brief, campaign goal, and design language. |
+| **Complete ad generation** | Hermes prepares a distinct creative brief for each post. The browser helper sends it to the selected image app and returns the artwork to Falkrona. |
 | **Consistency with variety** | Shared palette, typography, logo treatment, and CTA style/position; different concepts and compositions across posts. |
 | **Simple controls** | Arabic or English designs, delete an unwanted post/plan, regenerate a design with another idea, and change its posting date. |
 | **One plan approval** | Review designs, captions, and Cairo posting times, then approve the whole plan to schedule Facebook delivery. |
@@ -72,7 +72,7 @@ flowchart LR
     G --> B
 ```
 
-Gemini plans the campaign and writes a detailed design prompt for each post through Hermes. Falkrona validates the responses, saves progress, and manages generation jobs. The browser helper sends the prompts and assets to the connected image app and returns the finished artwork. A separate delivery worker publishes approved Facebook posts on schedule.
+Falkrona checks the browser connection before drafting. Hermes uses Gemini to draft the campaign and review its copy and design direction. Falkrona validates the responses and saves progress. The browser helper sends the brief and assets to the connected image app and returns the artwork. A separate delivery worker publishes approved Facebook posts on schedule.
 
 A product photo supplies **product identity**, such as the bottle, packaging, and label. Its original background, props, and composition are explicitly discarded. Only the optional reference supplies style inspiration. Generating designs does not authorize publication.
 
@@ -85,6 +85,7 @@ The setup guide targets **Windows + PowerShell**. It covers dependencies, the da
 | Run Falkrona for the first time | [Complete setup, steps 1–7](docs/SETUP.md#1-prerequisites) |
 | Try real planning and designs | [Gemini](docs/SETUP.md#4-enable-gemini-planning), then [browser helper](docs/SETUP.md#8-connect-the-browser-helper) |
 | Connect Facebook and publish | [Meta setup, step 10](docs/SETUP.md#10-facebook-and-meta-setup) |
+| Host Falkrona online | [Railway backend](docs/DEPLOYMENT.md#1-railway), then [Vercel frontend](docs/DEPLOYMENT.md#2-vercel) |
 | Create your first campaign | [First campaign walkthrough](docs/QUICKSTART.md) |
 | Fix a setup or generation issue | [Troubleshooting](docs/SETUP.md#troubleshooting) |
 
