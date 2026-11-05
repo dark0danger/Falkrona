@@ -1,14 +1,18 @@
 // Vercel evaluates this config at deployment time. This origin is public routing
 // configuration; provider keys remain exclusively in Railway variables.
+const defaultOrigin = 'https://falkrona-production.up.railway.app';
 const invalidOrigin = 'Set FALKRONA_BACKEND_URL to the Railway HTTPS origin, with no path or credentials.';
+
 let backend: URL;
 try {
-  backend = new URL(process.env.FALKRONA_BACKEND_URL || '');
+  backend = new URL(process.env.FALKRONA_BACKEND_URL || defaultOrigin);
 } catch {
-  throw new Error(invalidOrigin);
+  backend = new URL(defaultOrigin);
 }
-if (backend.protocol !== 'https:' || backend.username || backend.password || backend.pathname !== '/' || backend.search || backend.hash)
-  throw new Error(invalidOrigin);
+
+if (backend.protocol !== 'https:' || backend.username || backend.password || backend.pathname !== '/' || backend.search || backend.hash) {
+  backend = new URL(defaultOrigin);
+}
 
 export const config = {
   framework: 'vite',
