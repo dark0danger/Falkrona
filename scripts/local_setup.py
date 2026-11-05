@@ -80,7 +80,8 @@ def hermes_python(root: Path) -> Path:
         for suffix in ("Scripts/python.exe", "bin/python"):
             candidate = environment / suffix
             if candidate.is_file():
-                return candidate.resolve()
+                # On Linux the venv launcher is a symlink. Resolving it skips pyvenv.cfg.
+                return candidate.absolute()
     raise ValueError("No prepared Hermes interpreter was found. Run scripts/prepare_hermes.ps1.")
 
 

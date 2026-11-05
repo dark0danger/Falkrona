@@ -98,12 +98,21 @@ class LocalSetupTests(unittest.TestCase):
                 key = hashlib.sha256(str(checkout.resolve()).encode()).hexdigest()[:16]
                 facts = root / '.runtime/hermes' / home / 'installs' / key / 'facts.json'
                 facts.parent.mkdir(parents=True)
-                interpreter = root / 'prepared runtime/Scripts/python.exe'
+                suffix = 'Scripts/python.exe' if home == 'bootstrap' else 'bin/python'
+                interpreter = root / 'prepared runtime' / suffix
                 interpreter.parent.mkdir(parents=True)
                 interpreter.touch()
                 facts.write_text(json.dumps({'packages': {'venv': {'environment': str(interpreter.parent.parent)}}}))
+                original_resolve = Path.resolve
+
+                def resolve(path, *args, **kwargs):
+                    if path == interpreter:
+                        return root / 'base interpreter/python'
+                    return original_resolve(path, *args, **kwargs)
+
                 with patch.object(local_setup.subprocess, 'run', return_value=SimpleNamespace(stdout='expected-pin\n')):
-                    self.assertEqual(local_setup.hermes_python(root), interpreter.resolve())
+                    with patch.object(Path, 'resolve', autospec=True, side_effect=resolve):
+                        self.assertEqual(local_setup.hermes_python(root), interpreter.absolute())
                 with patch.object(local_setup.subprocess, 'run', return_value=SimpleNamespace(stdout='wrong-pin\n')):
                     with self.assertRaisesRegex(ValueError, 'does not match'):
                         local_setup.hermes_python(root)

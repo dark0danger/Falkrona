@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +25,11 @@ def main():
     sys.path.insert(0, str(ROOT / 'scripts'))
     from local_setup import hermes_python
     python = hermes_python(ROOT)
-    subprocess.run([str(python), '-c', 'from run_agent import AIAgent'], cwd=checkout, env=environment, check=True)
+    with TemporaryDirectory() as home:
+        subprocess.run([str(python), '-I', '-c',
+            'import sys; assert sys.prefix != sys.base_prefix, "Hermes must use its virtual environment"; '
+            'import httpx; sys.path.insert(0, sys.argv[1]); from run_agent import AIAgent', str(checkout)],
+            cwd=home, env=dict(environment, HERMES_HOME=home), check=True)
     (ROOT / '.runtime/hosted-hermes-python.txt').write_text(str(python))
 
 if __name__ == '__main__':
