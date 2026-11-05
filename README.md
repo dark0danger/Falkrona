@@ -57,7 +57,7 @@ Falkrona grew out of a graphic designer’s experience with that problem. It giv
 | Facebook Page connection and scheduled publishing | Available with a configured Meta app, Page permissions, and running workers. |
 | Instagram | Planned. Publishing is currently unavailable. |
 
-Browser image generation depends on a signed-in browser and the image service’s current controls and account limits. See [the browser integration details](docs/BROWSER_IMAGE_WORKFLOW.md) and [recent validation evidence](docs/evidence/drafting-recovery-2026-10-03.md).
+Browser image generation depends on a signed-in browser and the image service’s current controls and account limits. See [image setup and recovery](docs/BROWSER_IMAGE_WORKFLOW.md).
 
 ## How it works
 
@@ -188,13 +188,13 @@ Keep the image-app browser open during generation. Keep the API, database, and w
 
 The application uses Python **3.13**, Node **24** / npm **11**, and PostgreSQL **17**. Hermes has its own separately managed runtime; do not install it into Falkrona’s `.venv`. Its exact source revision is recorded in [`infra/hermes/pin.json`](infra/hermes/pin.json).
 
-## Validation
+## Tests
 
-Tests cover backend services, the interface, browser-helper behavior, and PostgreSQL integration. Recorded test runs and live checks are documented in [generation recovery](docs/evidence/drafting-recovery-2026-10-03.md), [design controls](docs/evidence/owner-design-controls-2026-10-03.md), [posting-date editing](docs/evidence/posting-date-editor-2026-10-03.md), and [scheduled publishing](docs/evidence/scheduled-publishing-2026-10-02.md).
+Tests cover the API, owner interface, browser helper, and publishing workflow. The default suite runs without live provider credentials.
 
 ```powershell
-# Offline phase checks use a separate *_phase_gate PostgreSQL database
-.\.venv\Scripts\python.exe scripts/phase_gate.py --phase 11 --offline
+# Backend tests
+.\.venv\Scripts\python.exe -m pytest
 
 # Frontend tests and build
 npm test
@@ -204,7 +204,7 @@ npm run build
 node --test apps/browser-helper/background.test.cjs apps/browser-helper/provider.test.cjs apps/browser-helper/provider-dom.test.cjs
 ```
 
-The optional [Hermes fixture probe](docs/SETUP.md#verification-and-development) exercises the real pinned agent loop without external model calls. Live Meta writes are separate from offline testing and require explicit plan approval.
+See [development checks](docs/SETUP.md#verification-and-development) for PostgreSQL integration tests.
 
 ## Documentation
 
@@ -218,8 +218,6 @@ The optional [Hermes fixture probe](docs/SETUP.md#verification-and-development) 
 | [Browser helper](apps/browser-helper/README.md) | Installation, updating, connection, and account handling. |
 | [Social checklist](docs/SOCIAL_APP_CHECKLIST.md) | Facebook permission and callback details; Instagram scope. |
 | [Security operations](docs/SECURITY.md) | Secrets, credential encryption, rotation, and recovery. |
-| [Project decisions](docs/DECISIONS.md) | Runtime, provider, state, and isolation decisions. |
-| [Progress](docs/PROGRESS.md) | Phase-by-phase implementation and verification records. |
 | [Dependency licenses](docs/DEPENDENCY_LICENSES.md) | Third-party package metadata. |
 
 ## License

@@ -24,3 +24,6 @@ apps/web/vite.config.d.ts
 *.pem
 *.key
 docs/evidence/generated/
+/AGENTS.md
+/docs/presentation/
+/Falkrona Logo.png

@@ -406,22 +406,13 @@ The utility only creates fresh security values during `init`. `hermes` changes t
 These checks do not require a live model key unless you explicitly exercise live providers:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/check_environment.py
-.\.venv\Scripts\python.exe scripts/phase_gate.py --phase 11 --offline
+.\.venv\Scripts\python.exe -m pytest
 npm test
 npm run build
 node --test apps/browser-helper/background.test.cjs apps/browser-helper/provider.test.cjs apps/browser-helper/provider-dom.test.cjs
 ```
 
-The environment report also expects historical Hermes lock/runtime preparation; a missing fixture capability is not proof that your explicit live interpreter is unusable. Phase-gate PostgreSQL tests use an isolated database ending in `_phase_gate`, not the application database.
-
-Optional real-Hermes offline probe:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_hermes_spike.ps1
-```
-
-That probe exercises the pinned runtime through a loopback fixture provider; it is a test, not a live creative request. Use [recorded evidence](evidence/drafting-recovery-2026-10-03.md) to understand historical validation and [PROGRESS](PROGRESS.md) for implementation history.
+PostgreSQL job and isolation tests skip unless `BRANDPILOT_TEST_DATABASE_URL` points to a disposable local PostgreSQL database. When running these tests, clear `BRANDPILOT_DATABASE_URL` from the test shell so Alembic uses the test connection. Use a test database role that can run migrations and create the restricted application role.
 
 ## Hosting later
 

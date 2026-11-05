@@ -17,8 +17,7 @@ Permission names and Page tasks can be checked without writes:
 
 `python scripts/check_meta_permissions.py --workspace-id <workspace UUID>`
 
-This check uses the project's `.env` privately and prints no credentials. See
-[the 2 October publishing review](evidence/publishing-permissions-2026-10-02.md).
+This check uses the project's `.env` and prints the granted permissions and Page tasks.
 
 - Create separate development applications and callback settings for Facebook and Instagram.
 - Record the owner, app ID, API version, review status, and verification date.
