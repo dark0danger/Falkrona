@@ -27,6 +27,18 @@ from .provider_policy import ModelRequest, admit_model_request
 
 logger = logging.getLogger(__name__)
 
+PROVIDER_FAILURE_MESSAGES = {
+    "gemini_access_denied": "Gemini denied access. Ask your workspace administrator to check the Gemini API key and model permissions.",
+    "gemini_rate_limited": "Gemini's usage limit was reached. Try again later or ask your workspace administrator to check the quota.",
+    "gemini_model_not_found": "The configured Gemini model isn't available. Ask your workspace administrator to check the model name.",
+    "gemini_billing_required": "Gemini requires billing for this request. Ask your workspace administrator to check the model and project settings.",
+    "gemini_connection_failed": "Falkrona couldn't connect to Gemini. Ask your workspace administrator to check the server's internet access.",
+    "gemini_request_rejected": "Gemini rejected the planning request. Ask your workspace administrator to check the model and project settings.",
+    "provider_timeout": "Gemini took too long to respond. Try drafting again.",
+    "hermes_startup_failed": "Falkrona couldn't start its planning service. Ask your workspace administrator to check the server logs.",
+    "provider_unavailable": "Gemini couldn't finish planning. Try again later.",
+}
+
 
 class HermesCreativeExecutor:
     def __init__(self, *, api_key: str, python_path: str = "", timeout_seconds=120):
@@ -81,7 +93,10 @@ class HermesCreativeExecutor:
                     raise Phase4Error("provider_unavailable", "Hermes could not complete Gemini planning. Check the configured model and key.")
                 result = json.loads(output.read_text(encoding="utf-8"))
                 if result.get("error"):
-                    raise Phase4Error(result["error"], "Gemini planning failed; the saved design is preserved.")
+                    code = result["error"]
+                    if not isinstance(code, str) or code not in PROVIDER_FAILURE_MESSAGES:
+                        code = "provider_unavailable"
+                    raise Phase4Error(code, PROVIDER_FAILURE_MESSAGES[code])
                 return result
             finally:
                 if process.poll() is None:
