@@ -7,7 +7,7 @@ This layout runs without your laptop hosting Falkrona. Image generation still us
 - **Railway PostgreSQL:** persistent application database.
 - **Railway backend:** the root `Dockerfile` builds the pinned Hermes runtime separately from Falkrona. `scripts/run_hosted.py` migrates the database and starts the API plus two workers per workspace. The publishing worker stays responsive while creative planning runs.
 - **Railway volume:** mount at `/data`. The API and workers run in the same service so they share uploaded assets and generated artwork. Use **one replica**, with sleeping/serverless mode disabled. This setup targets a small showcase deployment. More replicas require shared object storage and a separate worker topology.
-- **Vercel frontend:** the React app. `vercel.ts` forwards `/api/*` and `/health/*` to Railway, keeping session cookies on the frontend origin. Do not enable caching for authenticated API responses.
+- **Vercel frontend:** the React app. `vercel.json` forwards `/api/*` and `/health/*` to Railway, keeping session cookies on the frontend origin. Do not enable caching for authenticated API responses.
 
 ## 1. Railway
 
@@ -47,7 +47,7 @@ Open `https://YOUR-BACKEND.up.railway.app/health/ready` and require HTTP 200. Mi
 ## 2. Vercel
 
 1. In the [Vercel dashboard](https://vercel.com/dashboard), choose **Add New → Project** and import `dark0danger/Falkrona`.
-2. Leave **Root Directory at the repository root**. Choose **Vite** and verify the settings below. The checked-in `vercel.ts` supplies the install, build and output settings.
+2. Leave **Root Directory at the repository root**. Choose **Vite** and verify the settings below. The checked-in `vercel.json` supplies the install, build and output settings.
 3. Add `FALKRONA_BACKEND_URL` under **Environment Variables** for **Production**, then deploy. If you change it later, redeploy for the new value to take effect.
 
 - Install: `npm ci`
