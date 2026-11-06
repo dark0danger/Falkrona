@@ -1,4 +1,4 @@
-# Falkrona Browser Helper · 0.1.7
+# Falkrona Browser Helper · 0.1.8
 
 [Full setup guide](../../docs/SETUP.md#8-connect-the-browser-helper) · [Image workflow](../../docs/BROWSER_IMAGE_WORKFLOW.md)
 
@@ -17,7 +17,7 @@ You do not normally press Send yourself. The helper confirms attachments and sub
 
 ## Update or change origin
 
-After updating files, click **Reload** on the extension’s card, then refresh Falkrona. The loaded folder must be the one you updated. The manifest currently reports **0.1.7**.
+After updating files, click **Reload** on the extension’s card, then refresh Falkrona. The loaded folder must be the one you updated. Gemini requires helper **0.1.8** or later.
 
 Accounts now includes an image-connection check. Content plan verifies the helper before starting a paid/model drafting request. Once the matching prompt appears in the image conversation, the helper returns to Falkrona if its image tab is still active. It leaves unrelated tabs alone. If a request pauses, **Open image request** opens that same tab without resending. Browser connection readiness does not verify provider login, quota or generation time.
 

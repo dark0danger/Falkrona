@@ -23,6 +23,13 @@ test('uses the unique enabled Send control in the composer form', () => {
   form.querySelectorAll = () => [node('Send', {'aria-disabled': 'true'})];
   assert.equal(findSend(composer), null);
 });
+test('Gemini finds Send in the composer fieldset outside the editor wrapper', () => {
+  const send = node('Send message');
+  const fieldset = {querySelectorAll: () => [node('Dictate'), send]};
+  const composer = {closest: selector => selector === 'fieldset,form' ? fieldset : null,
+    parentElement: {querySelectorAll: () => []}};
+  assert.equal(findSend(composer, 'gemini'), send);
+});
 test('recognizes current ChatGPT message headings and binds a result to the full original prompt', () => {
   const prompt = 'Generate ONE ad. Exact headline: Fresh coffee.';
   const user = {innerText: 'You said:\n'+prompt}, assistant = {innerText: 'ChatGPT said:\nGenerated image 1'};

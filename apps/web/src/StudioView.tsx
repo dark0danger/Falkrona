@@ -259,8 +259,8 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
     const requestId = activeRequest.current;
     const status = await helperRequest("status");
     setHelperConnected(Boolean(status.connected));
-    requireCurrentHelper(status.helper_version);
     if (status.provider !== current.provider) throw new Error("Choose the same image app in the helper's Connect menu.");
+    requireCurrentHelper(status.helper_version, current.provider);
     const started = await helperRequest("start", current, undefined, resumeOnly);
     if (started.stage === "paused") throw new Error(started.error ?? "Use Recovery options to import the existing image.");
     const deadline = Math.min(Date.parse(current.expires_at), Date.now() + 19 * 60000);

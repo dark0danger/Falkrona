@@ -1,7 +1,8 @@
 // Website UI adapter: no undocumented APIs, tokens, cookies or existing-chat access.
 if (!globalThis.falkronaProviderV3Installed) {
   globalThis.falkronaProviderV3Installed = true;
-  const {normalizePrompt, findComposer, findSend, messages, promptMatches} = globalThis.falkronaProviderDOM;
+  const {normalizePrompt, findComposer, findSend, messages, promptMatches,
+    geminiControl, geminiFileInput} = globalThis.falkronaProviderDOM;
   let started = false;
   let cancelled = false;
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -26,8 +27,7 @@ if (!globalThis.falkronaProviderV3Installed) {
       || inputs.find(e => /^(Attach photos|إرفاق صور)$/i.test(e.getAttribute?.("aria-label") || ""))
       || inputs.find(e => !/video/i.test(e.getAttribute?.("accept") || ""));
   }
-  async function readyUploadInput(provider) {
-    if (provider !== "chatgpt") return uploadInput();
+  async function readyChatGPTUploadInput() {
     // The server-rendered composer/input can appear before React accepts files.
     // Verify a real interaction first; an opened upload menu proves hydration.
     const ready = await waitFor(() => {
@@ -40,6 +40,30 @@ if (!globalThis.falkronaProviderV3Installed) {
     const toggle = button(/^Add files and more$/i);
     if (toggle?.getAttribute("aria-expanded") === "true") toggle.click();
     return waitFor(uploadInput);
+  }
+  async function readyGeminiUploadInput() {
+    let opened = false, choseLocal = false;
+    const input = await waitFor(() => {
+      if (geminiControl(/^(?:Sign in|Sign in to try tools\b.*|تسجيل الدخول)$/iu))
+        pause("Sign in to Gemini in this browser, then continue the saved design in Falkrona.");
+      const picker = geminiFileInput();
+      if (picker) return picker;
+      const local = geminiControl(/^(?:Upload files|Upload from (?:your )?(?:device|computer)|تحميل (?:الملفات|ملفات|من الكمبيوتر|من الجهاز)|رفع الملفات)$/iu);
+      if (local && !choseLocal) {
+        choseLocal = true;
+        local.click();
+        return geminiFileInput();
+      }
+      const toggle = geminiControl(/^(?:Upload\s*(?:&|and)\s*tools|(?:Open )?upload menu|Add files(?: and more)?|إضافة (?:ال)?ملفات|التحميل والأدوات)$/iu);
+      const expanded = toggle?.getAttribute("aria-expanded");
+      if (toggle && !choseLocal && expanded !== "true" && (!opened || expanded === "false")) {
+        opened = true;
+        toggle.click();
+      }
+      return null;
+    }, 30000);
+    if (!input) pause("Gemini’s upload controls aren’t ready. Open the image request, check Gemini, then continue the saved design.");
+    return input;
   }
   const pause = message => { throw new Error(message); };
   async function waitFor(check, timeout = 20000) {
@@ -77,28 +101,32 @@ if (!globalThis.falkronaProviderV3Installed) {
       const composer = findComposer();
       if (composer && !normalizePrompt(composer.value || composer.innerText)) {
         const hasFiles = [...document.querySelectorAll('input[type="file"]')].some(input => input.files?.length);
-        if (!hasFiles && !packet.attachments.some(asset => document.body.innerText.includes(asset.name)))
+        if (!hasFiles && !packet.attachments.some(attachmentNamed))
           return generate(packet, false, false); // Known empty login pause, no prior message/upload.
       }
       if (!composer || normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt))
         pause("The prepared message changed or is missing. Nothing was sent.");
       await confirmAttachments(packet);
-      await submit(composer);
+      await submit(composer, packet.provider);
       return receiveImage(packet, responseSelector);
     }
     if (responses().length || userMessages().length) pause("A fresh conversation could not be verified. The helper has not sent it.");
-    if (packet.provider === "gemini") {
-      const picker = button(/Open mode picker.*Flash-Lite/i);
+    const emptyComposer = findComposer();
+    if (!emptyComposer || normalizePrompt(emptyComposer.value || emptyComposer.innerText))
+      pause("The composer is not empty or still loading. Nothing was sent.");
+    const gemini = packet.provider === "gemini";
+    if (gemini) {
+      const picker = geminiControl(/^Open mode picker.*Flash[- ]Lite/i);
       if (picker) {
         picker.click();
-        const flash = await waitFor(() => button(/^Flash$/i), 3000);
-        if (!flash) pause("Choose Flash in Gemini for multiple image references, then use the saved prompt.");
-        flash.click();
+        const flash = await waitFor(() => geminiControl(/^(?:\d+(?:\.\d+)?\s+)?Flash(?:\s+All-around help)?$/i), 3000);
+        if (flash) flash.click();
+        else if (picker.getAttribute("aria-expanded") === "true") picker.click();
       }
     }
     await progress("attaching");
-    let input = await readyUploadInput(packet.provider);
-    if (!input) {
+    let input = await (gemini ? readyGeminiUploadInput() : readyChatGPTUploadInput());
+    if (!gemini && !input) {
       const upload = button(/Upload & tools|Add files and more|إضافة ملفات|تحميل/i);
       if (!upload) pause("The upload controls changed. Download the prepared images from Studio.");
       upload.click();
@@ -106,28 +134,18 @@ if (!globalThis.falkronaProviderV3Installed) {
       if (local) local.click();
       input = await waitFor(uploadInput);
     }
-    if (!input || (!input.multiple && packet.attachments.length > 1)) pause("Automatic attachment is unavailable. Use the prepared files in Studio.");
-    const transfer = new DataTransfer();
-    for (const asset of packet.attachments) {
-      const raw = atob(asset.data); const bytes = Uint8Array.from(raw, character => character.charCodeAt(0));
-      transfer.items.add(new File([bytes], asset.name, {type: asset.mime_type}));
-    }
-    if (cancelled) pause("The helper was disconnected.");
-    for (let attempt = 0; attempt < 2; attempt++) {
-      input.files = transfer.files; input.dispatchEvent(new Event("change", {bubbles: true}));
-      // Initial hydration can replace the file input before its handler accepts files.
-      await waitFor(() => packet.attachments.every(attachmentNamed) || input.isConnected === false, 45000);
-      if (packet.attachments.every(attachmentNamed)) break;
-      const editor = findComposer();
-      const hasSelectedFiles = [...document.querySelectorAll('input[type="file"]')].some(e => e.files?.length);
-      const hasAttachmentPreview = [...document.querySelectorAll('[data-composer-attachments]')]
-        .some(e => visible(e) && (e.querySelector('img') || e.textContent.trim()));
-      if (attempt === 0 && !hasSelectedFiles && !hasAttachmentPreview && !packet.attachments.some(attachmentNamed)
-          && !userMessages().length && !responses().length && editor && !normalizePrompt(editor.value || editor.innerText)) {
-        input = await waitFor(uploadInput);
-        if (input) continue; // Hydration may replace OR retain/reset an inactive input.
+    if (!input) pause("Automatic attachment is unavailable. Use the prepared files in Studio.");
+    if (gemini && !input.multiple) {
+      // Some Gemini layouts expose a single-file picker. Confirm each file
+      // before staging the next, and keep the prompt unsent on any mismatch.
+      for (const asset of packet.attachments) {
+        input = await readyGeminiUploadInput();
+        attachFiles(input, [asset]);
+        await confirmAttachments({attachments: [asset]});
       }
-      pause("The image app did not confirm all attachments. Check its tab; use the saved prompt if needed.");
+      await confirmAttachments(packet);
+    } else {
+      await attachBatch(input, gemini ? readyGeminiUploadInput : () => waitFor(uploadInput));
     }
     const composer = findComposer();
     if (!composer || (composer.value || composer.innerText || '').trim()) pause("The composer is not empty. Nothing was sent.");
@@ -141,12 +159,43 @@ if (!globalThis.falkronaProviderV3Installed) {
     composer.dispatchEvent(new InputEvent("input", {bubbles: true, inputType: "insertText", data: packet.prompt}));
     // Rich editors add paragraph breaks and NBSP. Compare every word, not their spacing.
     if (normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt)) pause("The prompt did not load correctly. Nothing was sent.");
-    await submit(composer);
+    await submit(composer, packet.provider);
     return receiveImage(packet, responseSelector);
+
+    async function attachBatch(input, findInput) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (!input.multiple && packet.attachments.length > 1)
+          pause("Automatic attachment is unavailable. Use the prepared files in Studio.");
+        attachFiles(input, packet.attachments);
+        // Initial hydration can replace the input before its handler accepts files.
+        await waitFor(() => packet.attachments.every(attachmentNamed) || input.isConnected === false, 45000);
+        if (packet.attachments.every(attachmentNamed)) return;
+        const editor = findComposer();
+        const hasSelectedFiles = [...document.querySelectorAll('input[type="file"]')].some(e => e.files?.length);
+        const hasAttachmentPreview = [...document.querySelectorAll('[data-composer-attachments]')]
+          .some(e => visible(e) && (e.querySelector('img') || e.textContent.trim()));
+        if (attempt === 0 && !hasSelectedFiles && !hasAttachmentPreview && !packet.attachments.some(attachmentNamed)
+            && !userMessages().length && !responses().length && editor && !normalizePrompt(editor.value || editor.innerText)) {
+          input = await findInput();
+          if (input) continue;
+        }
+        pause("The image app did not confirm all attachments. Check its tab; use the saved prompt if needed.");
+      }
+    }
   }
-  async function submit(composer) {
+  function attachFiles(input, assets) {
+    if (cancelled) pause("The helper was disconnected.");
+    const transfer = new DataTransfer();
+    for (const asset of assets) {
+      const bytes = Uint8Array.from(atob(asset.data), character => character.charCodeAt(0));
+      transfer.items.add(new File([bytes], asset.name, {type: asset.mime_type}));
+    }
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", {bubbles: true}));
+  }
+  async function submit(composer, provider) {
     await progress("ready_to_send");
-    const send = await waitFor(() => findSend(composer), 45000);
+    const send = await waitFor(() => findSend(composer, provider), 45000);
     if (!send) pause("The image app is not ready to send. Check its tab.");
     // Persist intent BEFORE clicking. Interrupted/uncertain sends must never be repeated.
     await progress("submitted"); send.click();

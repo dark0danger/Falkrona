@@ -6,8 +6,8 @@
     return [...root.querySelectorAll('textarea,[contenteditable="true"][role="textbox"],#prompt-textarea')]
       .find(element => visible(element) && !element.disabled && element.getAttribute("aria-disabled") !== "true");
   }
-  function findSend(composer) {
-    const scope = composer?.closest("form") ?? composer?.parentElement;
+  function findSend(composer, provider) {
+    const scope = composer?.closest(provider === "gemini" ? "fieldset,form" : "form") ?? composer?.parentElement;
     if (!scope) return null;
     const candidates = [...scope.querySelectorAll("button")].filter(element => {
       const name = (element.getAttribute("aria-label") || element.textContent || "").trim();
@@ -28,7 +28,24 @@
   function promptMatches(message, prompt) {
     return normalizePrompt(message?.innerText).includes(normalizePrompt(prompt));
   }
-  const api = {normalizePrompt, visible, findComposer, findSend, messages, promptMatches};
+  function geminiControl(pattern, root = document) {
+    return [...root.querySelectorAll('button,[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"]')]
+      .find(element => visible(element) && !element.disabled && element.getAttribute("aria-disabled") !== "true"
+        && [element.getAttribute("aria-label"), element.getAttribute("title"), element.textContent]
+          .some(name => pattern.test(normalizePrompt(name))));
+  }
+  function geminiFileInput(root = document) {
+    const candidates = [...root.querySelectorAll('input[type="file"]')].filter(input => {
+      if (input.disabled || input.isConnected === false || input.webkitdirectory || input.hasAttribute("capture")) return false;
+      const name = [input.id, input.getAttribute("aria-label")].join(" ");
+      if (/camera|folder|directory|capture/i.test(name)) return false;
+      const accept = normalizePrompt(input.getAttribute("accept"));
+      return !accept || accept.split(",").some(type => /^(?:\*\/\*|image\/\S+|\.(?:png|jpe?g|webp|gif))$/i.test(type.trim()));
+    });
+    const multiple = candidates.filter(input => input.multiple);
+    return multiple.length === 1 ? multiple[0] : candidates.length === 1 ? candidates[0] : null;
+  }
+  const api = {normalizePrompt, visible, findComposer, findSend, messages, promptMatches, geminiControl, geminiFileInput};
   globalThis.falkronaProviderDOM = api;
   if (typeof module !== "undefined") module.exports = api;
 })();

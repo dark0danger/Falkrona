@@ -4,18 +4,19 @@ export type BrowserPacket = {run_id: string; workspace_id: string; design_id: st
   attachments: Array<{role: string; name: string; mime_type: string; data: string}>};
 export type HelperResult = {connected?: boolean; provider?: ImageApp; helper_version?: string; stage?: string; image?: string; error?: string};
 
-export function requireCurrentHelper(version?: string) {
+export function requireCurrentHelper(version?: string, provider?: ImageApp) {
   const patch = /^0\.1\.(\d+)$/.exec(version ?? "");
-  if (!patch || Number(patch[1]) < 7)
-    throw new Error("Update Falkrona Browser Helper to 0.1.7 or later from Accounts, click Reload in Extensions, then refresh Falkrona.");
+  const minimum = provider === "gemini" ? 8 : 7;
+  if (!patch || Number(patch[1]) < minimum)
+    throw new Error(`Update Falkrona Browser Helper to 0.1.${minimum} or later from Accounts, click Reload in Extensions, then refresh Falkrona.`);
 }
 
 export async function checkImageConnection(provider?: ImageApp): Promise<HelperResult> {
   const status = await helperRequest("status");
   if (!status.connected) throw new Error("Connect your image app in Accounts before creating posts.");
-  requireCurrentHelper(status.helper_version);
   if (provider && status.provider !== provider)
     throw new Error(`Your helper is connected to ${status.provider === "gemini" ? "Gemini" : "ChatGPT"}. Choose that image app in Plan preferences, or reconnect in Accounts.`);
+  requireCurrentHelper(status.helper_version, status.provider);
   return status;
 }
 
