@@ -37,8 +37,40 @@ def main():
             from run_agent import AIAgent
 
             class CreativeAgent(AIAgent):
+                incomplete_json = False
+
                 def _invoke_api_request_error_hook(self, *, status_code=None, reason=None, error_type=None, **_):
                     request_failure.update(status=status_code, reason=reason, error_type=error_type)
+
+                def _check_structured_response(self, response):
+                    self.incomplete_json = False
+                    choices = getattr(response, "choices", None)
+                    if not choices or getattr(choices[0], "finish_reason", None) != "length":
+                        return response
+                    choice = choices[0]
+                    message = getattr(choice, "message", None)
+                    try:
+                        complete = isinstance(json.loads(getattr(message, "content", "") or ""), dict)
+                    except (TypeError, ValueError):
+                        complete = False
+                    if complete and not getattr(message, "tool_calls", None):
+                        # Hermes handles "length" before recording usage. A complete JSON
+                        # object needs no continuation and still receives schema validation.
+                        choice.finish_reason = "stop"
+                    else:
+                        self.incomplete_json = True
+                    return response
+
+                def _interruptible_streaming_api_call(self, *args, **kwargs):
+                    return self._check_structured_response(super()._interruptible_streaming_api_call(*args, **kwargs))
+
+                def _interruptible_api_call(self, *args, **kwargs):
+                    return self._check_structured_response(super()._interruptible_api_call(*args, **kwargs))
+
+                def _handle_max_iterations(self, messages, api_call_count):
+                    # Hermes normally makes an extra summary request at this point.
+                    # A summary cannot satisfy the schema or use an unreserved call.
+                    return ""
 
             fixture = len(sys.argv) == 5 and sys.argv[3] == "--fixture-url"
             base_url = sys.argv[4] if fixture else "https://generativelanguage.googleapis.com/v1beta"
@@ -70,7 +102,9 @@ def main():
             stage = "request"
             try:
                 result = agent.run_conversation(message)
-                if result.get("failed") or result.get("error"):
+                if agent.incomplete_json and not request_failure:
+                    payload = {"error": "gemini_incomplete_response"}
+                elif result.get("failed") or result.get("error"):
                     if not request_failure.get("reason"):
                         request_failure["reason"] = result.get("failure_reason")
                     payload = {"error": provider_failure(**request_failure)}

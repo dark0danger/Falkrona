@@ -35,6 +35,7 @@ PROVIDER_FAILURE_MESSAGES = {
     "gemini_billing_required": "Gemini requires billing for this request. Ask your workspace administrator to check the model and project settings.",
     "gemini_connection_failed": "Falkrona couldn't connect to Gemini. Ask your workspace administrator to check the server's internet access.",
     "gemini_request_rejected": "Gemini rejected the planning request. Ask your workspace administrator to check the model and project settings.",
+    "gemini_incomplete_response": "Gemini stopped before it finished its response. Try again to continue from your saved work.",
     "provider_timeout": "Gemini took too long to respond. Try drafting again.",
     "hermes_startup_failed": "Falkrona couldn't start its planning service. Ask your workspace administrator to check the server logs.",
     "provider_unavailable": "Gemini couldn't finish planning. Try again later.",
@@ -155,6 +156,35 @@ class CreativeDirectionHandler:
             progress()
             images = []
             weekly_repair_used = False
+            direction_repair_used = False
+
+            def complete_direction(instructions, visuals=None):
+                nonlocal direction_repair_used
+
+                def call(text):
+                    if isinstance(self.executor, HermesCreativeExecutor):
+                        return self.executor(text, model, progress,
+                            schema=checkpoint.get("response_schema") or direction_schema(), images=visuals)
+                    return self.executor(text, model, progress)
+
+                try:
+                    return call(instructions)
+                except Phase4Error as exc:
+                    if exc.code != "gemini_incomplete_response" or direction_repair_used:
+                        raise
+
+                repair = instructions + (
+                    "\nReturn one complete, compact JSON object without commentary. "
+                    "Keep the idea and image prompt concise. Preserve required facts, the selected "
+                    "language, the exact headline and CTA in the image prompt, and all immutable "
+                    "fields from any draft you are editing."
+                )
+                self.phase4.admit_model_call(workspace, run_id,
+                    input_tokens=len(repair.encode()) // 2 + 4000 + 2048 * len(visuals or []), output_tokens=4000)
+                direction_repair_used = True
+                progress()
+                return call(repair)
+
             if claim.kind == "planning.week":
                 from .weekly_planning import GeminiWeek, validate_week_copy_language, week_copy_language_instruction
                 week_schema = checkpoint.get("response_schema") or GeminiWeek.model_json_schema()
@@ -222,9 +252,7 @@ class CreativeDirectionHandler:
                                 preview.info.clear()
                                 buffer = BytesIO(); preview.save(buffer, "PNG")
                             images.append({"role": visual["role"], "data_url": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")})
-                    result = self.executor(prompt, model, progress, images=images)
-                else:
-                    result = self.executor(prompt, model, progress)
+                result = complete_direction(prompt, images)
                 validated = {"direction": DesignDirection.model_validate_json(result["text"]).model_dump()}
                 if not validated["direction"]["product_observation"]:
                     raise Phase4Error("product_identity_missing", "Gemini must distinguish the actual product from its photo's scenery.")
@@ -258,15 +286,14 @@ class CreativeDirectionHandler:
                 if field == "plan":
                     parsed, reviewed = complete_week_json(editing)
                 else:
-                    reviewed = (self.executor(editing, model, progress, schema=checkpoint.get("response_schema") or direction_schema())
-                                if isinstance(self.executor, HermesCreativeExecutor) else self.executor(editing, model, progress))
+                    reviewed = complete_direction(editing)
                     if reviewed.get("model_calls", 0) != 1:
                         raise Phase4Error("invalid_usage", "The editorial pass exceeded its single-call contract.")
                     parsed = DesignDirection.model_validate_json(reviewed["text"]).model_dump()
                 validate_review(draft, parsed, claim.kind)
                 validated[field] = parsed
                 validated["editorial_review"] = {"version": 1, "status": "completed", "model_calls":
-                    3 if weekly_repair_used else 2}
+                    3 if weekly_repair_used or direction_repair_used else 2}
                 usage = {key: result.get("usage", {}).get(key, 0) + reviewed.get("usage", {}).get(key, 0)
                          for key in ("input_tokens", "output_tokens")}
                 result = {**reviewed, "usage": usage}
@@ -321,7 +348,9 @@ class CreativeDirectionHandler:
                             {"field": ".".join(str(part) for part in error["loc"]), "message": error["msg"][:200]}
                             for error in exc.errors(include_input=False, include_url=False)[:8]]}
                     row.last_error, row.completed_at = code, utc_now()
-                    if claim.kind == "planning.week" and hasattr(exc, "code"):
+                    if (claim.kind == "planning.week" and hasattr(exc, "code")) or (
+                        claim.kind == "creative.direction" and code in PROVIDER_FAILURE_MESSAGES
+                    ):
                         row.output = {**row.output, "failure_message": str(exc)[:400]}
                     elif claim.kind == "planning.week" and isinstance(exc, ValidationError):
                         row.output = {**row.output, "failure_message": "Gemini returned an incomplete plan. Try drafting again."}

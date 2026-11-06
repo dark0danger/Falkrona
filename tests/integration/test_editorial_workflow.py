@@ -5,6 +5,7 @@ import json
 import pytest
 from sqlalchemy import select
 
+from brandpilot.phase4 import Phase4Error
 from brandpilot.models import AgentRun, PublicationApproval, DesignVersion, utc_now
 from brandpilot.learning import writing_memory, post_feedback
 from tests.integration import test_weekly_generation as fixtures
@@ -65,7 +66,7 @@ def test_failed_review_keeps_previous_plan_and_cannot_publish(flow, failure):
     flow.execute(executor)
     saved = flow.client.get(f"{flow.base}/agent-runs/{run['id']}").json()
     assert saved["status"] == "failed"
-    assert len(calls) == 2
+    assert len(calls) == (3 if failure == "invalid_json" else 2)
     assert flow.client.get(f"{flow.base}/plans?week_start=2026-12-28").json()["plan"]["id"] == flow.plan_id
 
 
@@ -79,6 +80,42 @@ def test_budget_prevents_unadmitted_editor_call(flow):
     assert len(calls) == 1
     assert flow.client.post(f"{flow.base}/agent-runs/{run['id']}/browser-packet", headers=flow.csrf,
         json={"provider": "chatgpt", "consent": True}).status_code == 422
+
+
+@pytest.mark.parametrize("failed_call", [1, 2])
+def test_cut_off_direction_recovers_before_image_handoff(flow, failed_call):
+    run = flow.client.post(flow.path, headers=flow.csrf, json=flow.inputs).json()
+    calls = []
+
+    def executor(prompt, *_):
+        calls.append(prompt)
+        if len(calls) == failed_call:
+            raise Phase4Error("gemini_incomplete_response", "Gemini stopped early.")
+        return result(DIRECTION)
+
+    flow.execute(executor)
+    saved = flow.client.get(f"{flow.base}/agent-runs/{run['id']}").json()
+    assert saved["status"] == "completed", saved
+    assert saved["output"]["editorial_review"]["model_calls"] == len(calls) == 3
+    packet = flow.client.post(f"{flow.base}/agent-runs/{run['id']}/browser-packet", headers=flow.csrf,
+        json={"provider": "chatgpt", "consent": True})
+    assert packet.status_code == 200, packet.json()
+
+
+def test_repeatedly_cut_off_direction_stays_failed(flow):
+    run = flow.client.post(flow.path, headers=flow.csrf, json=flow.inputs).json()
+    calls = []
+
+    def executor(prompt, *_):
+        calls.append(prompt)
+        raise Phase4Error("gemini_incomplete_response", "Gemini stopped early.")
+
+    flow.execute(executor)
+    saved = flow.client.get(f"{flow.base}/agent-runs/{run['id']}").json()
+    assert saved["status"] == "failed"
+    assert saved["last_error"] == "gemini_incomplete_response"
+    assert saved["output"]["failure_message"] == "Gemini stopped early."
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("failure", ["copy_prompt_mismatch", "editorial_contract_changed", "language_mismatch"])
