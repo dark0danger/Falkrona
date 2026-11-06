@@ -101,8 +101,37 @@ def test_invalid_draft_preserves_saved_plan_and_explains_rejection(flow,case,exp
     run=flow.client.get(flow.base+'/agent-runs/'+response.json()['id']).json()
     assert run['status']=='failed',run
     assert run['last_error']==expected,run
-    if case!='malformed':assert run['output']['failure_message']
+    assert run['output']['failure_message']
     assert flow.client.get(flow.base+'/plans?week_start=2026-12-28').json()['plan']['id']==flow.plan_id
+
+
+@pytest.mark.parametrize('invalid_call', [1, 2])
+def test_one_repair_recovers_incomplete_drafting_or_editing_response(flow, invalid_call):
+    response = start(flow, cadence=1)
+    assert response.status_code == 202
+    calls = []
+
+    def executor(prompt, *_):
+        calls.append(prompt)
+        return {'text': '{}' if len(calls) == invalid_call else json.dumps(make_posts(flow, 1)), 'model_calls': 1}
+
+    flow.execute(executor)
+    run = flow.client.get(flow.base+'/agent-runs/'+response.json()['id']).json()
+    assert run['status'] == 'completed', run
+    assert len(calls) == run['output']['editorial_review']['model_calls'] == 3
+
+
+def test_calendar_recovers_a_failed_draft_reason_without_resubmitting(flow):
+    week = '2026-12-21'
+    response = start(flow, week_start=week, cadence=1)
+    assert response.status_code == 202
+    flow.execute(lambda *_: {'text': '{}', 'model_calls': 1})
+
+    calendar = flow.client.get(flow.base+'/plans', params={'week_start': week}).json()
+    assert calendar['plan'] is None
+    assert calendar['draft_failure']['last_error'] == 'invalid_direction'
+    assert calendar['draft_failure']['failure_message']
+    assert flow.client.get(flow.base+'/plans?week_start=2026-12-28').json()['draft_failure'] is None
 
 
 def test_late_week_three_posts_have_future_slots_and_can_share_a_day(flow):

@@ -196,7 +196,7 @@ class WeeklyPlannerService:
                 key = key + f":{prior.id}" if prior.status in {"failed", "cancelled"} else prior.dedupe_key
         return self.phase4.create_run(principal, workspace_id, prompt, key, job_kind="planning.week",
             checkpoint={"inputs": inputs, "context_digest": digest, "max_tool_calls": 0, "editorial_version": 1,
-                        "response_schema": response_schema(context), "max_repair_cycles": 0, "network_retries": 0})
+                        "response_schema": response_schema(context), "max_repair_cycles": 1, "network_retries": 0})
 
 
 def apply_week(session, workspace_id, run, draft, storage):

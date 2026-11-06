@@ -23,6 +23,16 @@ function savedImageOptions(workspace:string,week:string):{photo:string;language:
     return value&&typeof value.photo==="string"&&["ar","en"].includes(value.language)&&["chatgpt","gemini"].includes(value.provider)?value:null;
   }catch{return null;}
 }
+type DraftFailure = { last_error?: string | null; failure_message?: string | null };
+
+function draftFailureMessage(failure: DraftFailure): string {
+  if (failure.failure_message) return failure.failure_message;
+  if (failure.last_error === "lease_expired_review_required") return "The planning worker was interrupted before it saved your draft. You can start a new draft.";
+  if (failure.last_error === "invalid_direction") return "Gemini returned an incomplete plan. Try drafting again.";
+  if (failure.last_error === "cancelled") return "Drafting was cancelled.";
+  return "Falkrona couldn’t finish this draft. Your saved designs are safe.";
+}
+
 export function CalendarView({workspaceId,csrf,canEdit,canApprove,brandReady,openBrand,openProducts,openAccounts,openStudio,assets,week,setWeek}: {
   week:string; setWeek:(week:string)=>void; workspaceId:string; csrf:string; canEdit:boolean; canApprove:boolean; brandReady:boolean; openBrand:()=>void; openProducts:()=>void; openAccounts:()=>void;
   openStudio:(planId:string,itemId:string,platform:string,schedule:string)=>void; assets:ProductPhoto[];
@@ -31,6 +41,7 @@ export function CalendarView({workspaceId,csrf,canEdit,canApprove,brandReady,ope
   const [loaded,setLoaded] = useState(false);
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
+  const [lastDraftFailure,setLastDraftFailure] = useState<DraftFailure|null>(null);
   const [consent,setConsent] = useState(false);
   const [notice,setNotice] = useState("");
   const [photos,setPhotos] = useState<ProductPhoto[]>([]);
@@ -56,23 +67,23 @@ export function CalendarView({workspaceId,csrf,canEdit,canApprove,brandReady,ope
   },[workspaceId,assets]);
   async function load() {
     const identity = current.current;
-    const result = await request<{plan:CalendarPlan|null;deleted_plan_id?:string|null}>(`${base}/plans?week_start=${week}`);
-    if(current.current===identity){setPlan(result.plan);setDeletedPlan(result.deleted_plan_id??null);setLoaded(true);}
+    const result = await request<{plan:CalendarPlan|null;deleted_plan_id?:string|null;draft_failure?:DraftFailure|null}>(`${base}/plans?week_start=${week}`);
+    if(current.current===identity){setPlan(result.plan);setDeletedPlan(result.deleted_plan_id??null);setLastDraftFailure(result.draft_failure??null);setLoaded(true);}
   }
   async function finishRun(runId:string) {
     const identity = current.current;
-    const deadline = Date.now()+330000;
+    const deadline = Date.now()+420000;
     while(Date.now()<deadline && current.current===identity) {
       const run = await request<{status:string;last_error?:string;output?:{failure_message?:string}}>(`${base}/agent-runs/${runId}`);
       if(run.status==="completed") {sessionStorage.removeItem(pendingKey); await load(); return;}
-      if(["failed","cancelled"].includes(run.status)) {sessionStorage.removeItem(pendingKey); throw new Error(run.output?.failure_message??"Falkrona couldn’t finish this draft. Your saved designs are safe. Try drafting again.");}
+      if(["failed","cancelled"].includes(run.status)) {sessionStorage.removeItem(pendingKey); throw new Error(draftFailureMessage({last_error:run.last_error??run.status,failure_message:run.output?.failure_message}));}
       await new Promise(resolve=>window.setTimeout(resolve,1500));
     }
     if(current.current===identity) throw new Error("Your plan is still being prepared. Refresh the calendar to check your saved request.");
   }
   useEffect(()=>{
     current.current = `${workspaceId}:${week}`;
-    setPlan(null); setLoaded(false); setError("");setAutoGenerate(false);setScheduled(false);setShowNewPlan(false);
+    setPlan(null); setLoaded(false); setError("");setLastDraftFailure(null);setAutoGenerate(false);setScheduled(false);setShowNewPlan(false);
     void load().catch(reason=>setError(String(reason)));
     const pending = sessionStorage.getItem(pendingKey);
     if(pending) {setBusy(true); setNotice("Planning and polishing your posts…"); void finishRun(pending).catch(reason=>setError(reason.message)).finally(()=>{setBusy(false);setNotice("");});}
@@ -81,7 +92,7 @@ export function CalendarView({workspaceId,csrf,canEdit,canApprove,brandReady,ope
   async function draft(event:FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget);
     sessionStorage.setItem(`falkrona-image-options:${workspaceId}:${week}`,JSON.stringify({photo,language,provider}));
-    setBusy(true); setError(""); setNotice("Checking your image connection…");
+    setBusy(true); setError(""); setLastDraftFailure(null); setNotice("Checking your image connection…");
     try {
       await checkImageConnection(provider);
       setNotice("Planning and polishing your posts…");
@@ -101,11 +112,12 @@ export function CalendarView({workspaceId,csrf,canEdit,canApprove,brandReady,ope
     catch(reason){setError(reason instanceof Error?reason.message:String(reason));}
     finally{setBusy(false);}
   }
+  const visibleError = error || (!busy && lastDraftFailure ? draftFailureMessage(lastDraftFailure) : "");
   return <section className="queue calendar-view" aria-labelledby="calendar-title">
     <div className="section-heading"><div><h2 id="calendar-title" className="sr-only">Content plan</h2></div>
       <div className="calendar-week-actions"><label>Week of<input type="date" value={week} disabled={busy} onChange={e=>e.target.value&&setWeek(mondayOf(e.target.value))}/></label>
         <button className="icon-button" aria-label="Refresh calendar" disabled={busy} onClick={()=>void load().catch(reason=>setError(reason.message))}><RefreshCw size={17}/></button></div></div>
-    {error&&<p className="form-error" role="alert">{error} {/helper|connection|image app/i.test(error)&&<button type="button" className="text-button" onClick={openAccounts}>Open accounts</button>}</p>}
+    {visibleError&&<p className="form-error" role="alert">{visibleError} {/helper|connection|image app/i.test(visibleError)&&<button type="button" className="text-button" onClick={openAccounts}>Open accounts</button>}</p>}
     {notice&&<p role="status">{notice}</p>}
     {deletedPlan&&!plan&&<p role="status" className="deletion-notice">Plan deleted. Your brand details are saved. <button className="text-action" disabled={busy} onClick={()=>void deletePlan(true)}>Undo</button></p>}
     {!loaded&&!error&&<p className="loading-line" role="status">Loading your plan…</p>}

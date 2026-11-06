@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import logging
 import threading
 from typing import Any
 
@@ -13,6 +14,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .models import AgentRun, Job, JobStep, OutboxEvent, Workspace
 from .database import set_workspace_context
+
+logger = logging.getLogger(__name__)
 
 
 class JobStateError(RuntimeError):
@@ -123,6 +126,9 @@ class JobStore:
                                                                    AgentRun.job_id == abandoned.id))
                         if run and run.status not in {"completed", "cancelled", "failed"}:
                             run.status, run.last_error = "failed", "lease_expired_review_required"
+                            run.completed_at = current
+                            if abandoned.kind == "planning.week":
+                                logger.warning("Creative job planning.week ended with lease_expired_review_required")
                     session.flush()
                 eligible = and_(
                     Job.attempts < Job.max_attempts,

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .accounts import AccountService, Principal
 from .database import set_workspace_context
 from .learning import applicable_preferences
-from .models import BrandProfileVersion, OnboardingInterview, Product, SocialPost, WeeklyPlan, Workspace, utc_now
+from .models import AgentRun, BrandProfileVersion, OnboardingInterview, Product, SocialPost, WeeklyPlan, Workspace, utc_now
 
 
 GOALS = frozenset({"awareness", "engagement", "leads", "sales"})
@@ -239,9 +239,19 @@ class PlanningService:
             rows = session.scalars(select(WeeklyPlan).where(
                 WeeklyPlan.workspace_id == workspace_id, WeeklyPlan.week_start == week_start
             ).order_by(WeeklyPlan.revision.desc())).all()
+            draft_failure = None
+            if not rows:
+                latest = session.execute(select(AgentRun.status, AgentRun.last_error,
+                    AgentRun.output["failure_message"].as_string()).where(
+                    AgentRun.workspace_id == workspace_id, AgentRun.dedupe_key.like("weekly-plan:%"),
+                    AgentRun.checkpoint["inputs"]["week_start"].as_string() == week_start.isoformat(),
+                ).order_by(AgentRun.created_at.desc(), AgentRun.id.desc()).limit(1)).first()
+                if latest and latest.status == "failed":
+                    draft_failure = {"last_error": latest[1], "failure_message": latest[2]}
             return {"plan": self._payload(rows[0] if rows and rows[0].status != "deleted" else None),
                     "deleted_plan_id": rows[0].id if rows and rows[0].status == "deleted" else None,
-                    "last_approved": self._payload(next((row for row in rows if row.status == "approved"), None))}
+                    "last_approved": self._payload(next((row for row in rows if row.status == "approved"), None)),
+                    "draft_failure": draft_failure}
 
     def generate(self, principal: Principal, workspace_id: str, *, week_start: date,
                  goal: str, platforms: list[str], cadence: int | None, reuse_existing: bool = False) -> dict:

@@ -153,11 +153,41 @@ class CreativeDirectionHandler:
                                          output_tokens=4000)
             progress()
             images = []
+            weekly_repair_used = False
             if claim.kind == "planning.week":
                 from .weekly_planning import GeminiWeek
-                result = (self.executor(prompt, model, progress, schema=checkpoint.get("response_schema") or GeminiWeek.model_json_schema())
-                          if isinstance(self.executor, HermesCreativeExecutor) else self.executor(prompt, model, progress))
-                validated = {"plan": GeminiWeek.model_validate_json(result["text"]).model_dump()}
+                week_schema = checkpoint.get("response_schema") or GeminiWeek.model_json_schema()
+
+                def complete_week_json(instructions):
+                    nonlocal weekly_repair_used
+
+                    def call(text):
+                        response = (self.executor(text, model, progress, schema=week_schema)
+                                    if isinstance(self.executor, HermesCreativeExecutor)
+                                    else self.executor(text, model, progress))
+                        if response.get("model_calls", 0) != 1:
+                            raise Phase4Error("invalid_usage", "The runtime exceeded its single-call contract.")
+                        return response
+
+                    response = call(instructions)
+                    try:
+                        return GeminiWeek.model_validate_json(response["text"]).model_dump(), response
+                    except ValidationError:
+                        if weekly_repair_used or checkpoint.get("max_repair_cycles") != 1:
+                            raise
+                    weekly_repair_used = True
+                    repair_prompt = (instructions + "\nReturn one complete JSON object matching the schema. "
+                                     "Every required field must be present. Omit commentary and code fences.")
+                    self.phase4.admit_model_call(workspace, run_id,
+                        input_tokens=len(repair_prompt.encode()) // 2 + 4000, output_tokens=4000)
+                    progress()
+                    repaired = call(repair_prompt)
+                    usage = {key: response.get("usage", {}).get(key, 0) + repaired.get("usage", {}).get(key, 0)
+                             for key in ("input_tokens", "output_tokens")}
+                    return GeminiWeek.model_validate_json(repaired["text"]).model_dump(), {**repaired, "usage": usage}
+
+                weekly_draft, result = complete_week_json(prompt)
+                validated = {"plan": weekly_draft}
             elif claim.kind == "branding.survey":
                 from .branding import BrandingSurvey
                 result = (self.executor(prompt, model, progress, schema=BrandingSurvey.model_json_schema())
@@ -203,7 +233,6 @@ class CreativeDirectionHandler:
             if result.get("model_calls", 0) != 1:
                 raise Phase4Error("invalid_usage", "The runtime exceeded its single-call contract.")
             if checkpoint.get("editorial_version") == 1 and claim.kind in {"planning.week", "creative.direction"}:
-                from .weekly_planning import GeminiWeek
                 field = "plan" if claim.kind == "planning.week" else "direction"
                 draft = validated[field]
                 editing = review_prompt(prompt, draft, claim.kind)
@@ -215,15 +244,18 @@ class CreativeDirectionHandler:
                     set_workspace_context(session, workspace)
                     row = session.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace, AgentRun.id == run_id))
                     row.checkpoint = {**row.checkpoint, "stage": "editing"}
-                schema = checkpoint.get("response_schema") or (GeminiWeek.model_json_schema() if field == "plan" else direction_schema())
-                reviewed = (self.executor(editing, model, progress, schema=schema)
-                            if isinstance(self.executor, HermesCreativeExecutor) else self.executor(editing, model, progress))
-                if reviewed.get("model_calls", 0) != 1:
-                    raise Phase4Error("invalid_usage", "The editorial pass exceeded its single-call contract.")
-                parsed = (GeminiWeek if field == "plan" else DesignDirection).model_validate_json(reviewed["text"]).model_dump()
+                if field == "plan":
+                    parsed, reviewed = complete_week_json(editing)
+                else:
+                    reviewed = (self.executor(editing, model, progress, schema=checkpoint.get("response_schema") or direction_schema())
+                                if isinstance(self.executor, HermesCreativeExecutor) else self.executor(editing, model, progress))
+                    if reviewed.get("model_calls", 0) != 1:
+                        raise Phase4Error("invalid_usage", "The editorial pass exceeded its single-call contract.")
+                    parsed = DesignDirection.model_validate_json(reviewed["text"]).model_dump()
                 validate_review(draft, parsed, claim.kind)
                 validated[field] = parsed
-                validated["editorial_review"] = {"version": 1, "status": "completed", "model_calls": 2}
+                validated["editorial_review"] = {"version": 1, "status": "completed", "model_calls":
+                    3 if weekly_repair_used else 2}
                 usage = {key: result.get("usage", {}).get(key, 0) + reviewed.get("usage", {}).get(key, 0)
                          for key in ("input_tokens", "output_tokens")}
                 result = {**reviewed, "usage": usage}
@@ -280,4 +312,6 @@ class CreativeDirectionHandler:
                     row.last_error, row.completed_at = code, utc_now()
                     if claim.kind == "planning.week" and hasattr(exc, "code"):
                         row.output = {**row.output, "failure_message": str(exc)[:400]}
+                    elif claim.kind == "planning.week" and isinstance(exc, ValidationError):
+                        row.output = {**row.output, "failure_message": "Gemini returned an incomplete plan. Try drafting again."}
             self.store.fail(claim.id, claim.lease_owner, code, retryable=False)
