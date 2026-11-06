@@ -45,6 +45,21 @@ class GeminiWeek(BaseModel):
     posts: list[WeeklyPost] = Field(min_length=1, max_length=5)
 
 
+def week_copy_language_instruction(language: str) -> str:
+    name = "Arabic" if language == "ar" else "English"
+    return (f"Write the campaign direction and every post's title, concept, call to action, and rationale in {name}. "
+            f"Use natural {name} even when the business context is in another language. "
+            "Keep brand names, factual reference keys, and enum values unchanged.")
+
+
+def validate_week_copy_language(draft: GeminiWeek, language: str) -> None:
+    copy = [draft.direction] + [getattr(post, field) for post in draft.posts for field in ("title", "concept", "cta", "rationale")]
+    if any(not any(character.isalpha() and ("\u0600" <= character <= "\u06ff" if language == "ar" else character.isascii())
+                   for character in value) for value in copy):
+        name = "Arabic" if language == "ar" else "English"
+        raise PlanningError("language_mismatch", f"Gemini returned some plan text in the wrong language. The plan needs {name}.")
+
+
 def response_schema(context):
     """Constrain structured generation to this owner's actual planning choices."""
     schema = GeminiWeek.model_json_schema()
@@ -180,7 +195,7 @@ class WeeklyPlannerService:
             "Use ONLY allowed_purposes. Uploaded photos are not product catalog records. If products is empty, do not use purpose product; "
             "if no confirmed offer exists, do not use purpose offer. For a sales goal without these facts, use education/conversation "
             "about the confirmed brand category with an enquiry CTA, without inventing discounts, pricing or availability. "
-            "Write titles, concepts, CTAs, direction and rationales in the selected language (ar=Arabic, en=English). "
+            f"{week_copy_language_instruction(language)} "
             "Generate every post's artwork before one whole-plan review and approval; no individual design approval is required. "
             "Schedule every post after earliest_posting_time and within the selected week, leaving time to generate and review artwork. "
             "Choose each day/hour pair from posting_slots. Several posts can share a day using different hours. "
@@ -208,10 +223,7 @@ def apply_week(session, workspace_id, run, draft, storage):
     if len(draft.posts) != context["cadence"]:
         raise PlanningError("wrong_post_count", "Gemini returned the wrong number of posts. Draft the week again.")
     language = context["language"]
-    copy = [draft.direction] + [getattr(post, field) for post in draft.posts for field in ("title", "concept", "cta", "rationale")]
-    if any(not any(character.isalpha() and ("\u0600" <= character <= "\u06ff" if language == "ar" else character.isascii())
-                   for character in text) for text in copy):
-        raise PlanningError("language_mismatch", "Gemini did not write the plan in your selected language. Draft again.")
+    validate_week_copy_language(draft, language)
     try:
         validate_visual_variety(draft.posts)
     except ValueError as exc:

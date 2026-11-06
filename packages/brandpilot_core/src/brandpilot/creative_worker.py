@@ -21,6 +21,7 @@ from .database import set_workspace_context
 from .design_direction import DesignDirection, direction_schema
 from .editorial import review_prompt, validate_review
 from .models import AgentRun, WeeklyPlan, WorkspaceAsset, utc_now
+from .planning import PlanningError
 from .visual_planning import repeats_image_prompt
 from .phase4 import Phase4Error, classify_and_redact
 from .provider_policy import ModelRequest, admit_model_request
@@ -155,8 +156,10 @@ class CreativeDirectionHandler:
             images = []
             weekly_repair_used = False
             if claim.kind == "planning.week":
-                from .weekly_planning import GeminiWeek
+                from .weekly_planning import GeminiWeek, validate_week_copy_language, week_copy_language_instruction
                 week_schema = checkpoint.get("response_schema") or GeminiWeek.model_json_schema()
+                week_language = checkpoint["inputs"].get("language", "en")
+                language_instruction = week_copy_language_instruction(week_language)
 
                 def complete_week_json(instructions):
                     nonlocal weekly_repair_used
@@ -169,22 +172,28 @@ class CreativeDirectionHandler:
                             raise Phase4Error("invalid_usage", "The runtime exceeded its single-call contract.")
                         return response
 
+                    def parse(response):
+                        draft = GeminiWeek.model_validate_json(response["text"])
+                        validate_week_copy_language(draft, week_language)
+                        return draft.model_dump()
+
                     response = call(instructions)
                     try:
-                        return GeminiWeek.model_validate_json(response["text"]).model_dump(), response
-                    except ValidationError:
+                        return parse(response), response
+                    except (ValidationError, PlanningError) as error:
                         if weekly_repair_used or checkpoint.get("max_repair_cycles") != 1:
                             raise
+                        correction = (language_instruction if isinstance(error, PlanningError) else
+                                      "Every required field must be present. Omit commentary and code fences.")
                     weekly_repair_used = True
-                    repair_prompt = (instructions + "\nReturn one complete JSON object matching the schema. "
-                                     "Every required field must be present. Omit commentary and code fences.")
+                    repair_prompt = instructions + "\nReturn one complete JSON object matching the schema. " + correction
                     self.phase4.admit_model_call(workspace, run_id,
                         input_tokens=len(repair_prompt.encode()) // 2 + 4000, output_tokens=4000)
                     progress()
                     repaired = call(repair_prompt)
                     usage = {key: response.get("usage", {}).get(key, 0) + repaired.get("usage", {}).get(key, 0)
                              for key in ("input_tokens", "output_tokens")}
-                    return GeminiWeek.model_validate_json(repaired["text"]).model_dump(), {**repaired, "usage": usage}
+                    return parse(repaired), {**repaired, "usage": usage}
 
                 weekly_draft, result = complete_week_json(prompt)
                 validated = {"plan": weekly_draft}
@@ -236,6 +245,8 @@ class CreativeDirectionHandler:
                 field = "plan" if claim.kind == "planning.week" else "direction"
                 draft = validated[field]
                 editing = review_prompt(prompt, draft, claim.kind)
+                if field == "plan":
+                    editing += "\n" + language_instruction
                 # Both calls are admitted before transport; never silently deliver an unreviewed draft.
                 self.phase4.admit_model_call(workspace, run_id,
                     input_tokens=len(editing.encode()) // 2 + 4000, output_tokens=4000)

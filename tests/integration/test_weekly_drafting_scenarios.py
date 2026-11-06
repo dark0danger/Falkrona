@@ -121,6 +121,32 @@ def test_one_repair_recovers_incomplete_drafting_or_editing_response(flow, inval
     assert len(calls) == run['output']['editorial_review']['model_calls'] == 3
 
 
+@pytest.mark.parametrize('invalid_call', [1, 2])
+def test_arabic_week_repairs_an_english_cta_in_draft_or_review(flow, invalid_call):
+    response = start(flow, cadence=1, language='ar')
+    assert response.status_code == 202
+    draft = make_posts(flow, 1)
+    draft['direction'] = 'أفكار متنوعة عن القهوة لهذا الأسبوع'
+    draft['posts'][0].update(title='قهوتك المفضلة', concept='لحظة قهوة مع Tepes',
+                            cta='شاركنا رأيك', rationale='محادثة عن عادات القهوة')
+    wrong_language = deepcopy(draft)
+    wrong_language['posts'][0]['cta'] = 'Tell us your favorite'
+    calls = []
+
+    def executor(prompt, *_):
+        calls.append(prompt)
+        assert 'call to action, and rationale in Arabic' in prompt
+        return {'text': json.dumps(wrong_language if len(calls) == invalid_call else draft), 'model_calls': 1}
+
+    flow.execute(executor)
+    run = flow.client.get(flow.base+'/agent-runs/'+response.json()['id']).json()
+    assert run['status'] == 'completed', run
+    assert len(calls) == run['output']['editorial_review']['model_calls'] == 3
+    plan = flow.client.get(flow.base+'/plans?week_start=2026-12-28').json()['plan']
+    assert plan['strategy']['language'] == 'ar'
+    assert plan['items'][0]['cta'] == 'شاركنا رأيك'
+
+
 def test_calendar_recovers_a_failed_draft_reason_without_resubmitting(flow):
     week = '2026-12-21'
     response = start(flow, week_start=week, cadence=1)
