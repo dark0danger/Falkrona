@@ -3,10 +3,10 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 require('./provider-dom.js');
-const {normalizePrompt, promptMatches, geminiControl, geminiFileInput} = globalThis.falkronaProviderDOM;
+const {normalizePrompt, promptMatches, geminiControl, geminiFileInput, geminiAttachments} = globalThis.falkronaProviderDOM;
 global.getComputedStyle = () => ({visibility: 'visible'});
 
-function fixture({submitted = false, missingAttachment = false, changedPrompt = false, fresh=false, hydration=false, stale=false, videoFirst=false, ignoredFirst=false, partialUpload=false, menuDelayed=false, menuUnavailable=false, duplicatePreview=false, transientPreview=false, distinctImages=false, gemini=false, singlePicker=false, signedOut=false, lazyPicker=false} = {}) {
+function fixture({submitted = false, missingAttachment = false, changedPrompt = false, fresh=false, hydration=false, stale=false, videoFirst=false, ignoredFirst=false, partialUpload=false, menuDelayed=false, menuUnavailable=false, duplicatePreview=false, transientPreview=false, distinctImages=false, gemini=false, singlePicker=false, signedOut=false, lazyPicker=false, existingGeminiTiles=0, changeTilesBeforeSend=false} = {}) {
   let listener, clicks = 0, fetched = 0, uploads=0, clock = Date.now();
   const stages = [];
   const provider = gemini ? 'gemini' : 'chatgpt';
@@ -16,7 +16,7 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
     attachments: [{name: 'logo.png',data:'YQ==',mime_type:'image/png'}, {name: 'product.png',data:'YQ==',mime_type:'image/png'}]};
   const composer = {value: '', innerText: packet.prompt.replace(/\n/g, '\n\n').replace(/ /g, '\u00a0')};
   if (changedPrompt) composer.innerText = 'Unrelated request';
-  if(fresh)composer.innerText='';
+  if(fresh || existingGeminiTiles)composer.innerText='';
   Object.assign(composer,{tagName:'DIV',focus(){},dispatchEvent(){}});
   const users = submitted ? [{innerText: packet.prompt}] : [];
   const image = {complete: true, naturalWidth: 1122, naturalHeight: 1402,
@@ -39,14 +39,19 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
   class Clock extends Date {static now() {return clock;}}
   let resolveResult;
   const result = new Promise(resolve => {resolveResult = resolve;});
+  const geminiTile = () => ({getClientRects:()=>[1], getAttribute:name=>name==='aria-label'?'close attachment':null});
+  const tiles = Array.from({length:existingGeminiTiles}, geminiTile);
   let input;
   const makeInput=()=>({id:'upload',multiple:!singlePicker,isConnected:true,hasAttribute:()=>false,
     getAttribute:name=>name==='aria-label'?'Attach files':gemini&&name==='accept'?'image/*,video/*':null,dispatchEvent(){
     uploads++;
-    if(partialUpload){this.files=[];document.body.innerText='logo.png';}
+    if(gemini){
+      tiles.push(...Array.from({length:partialUpload?1:this.files.length}, geminiTile));
+      this.files=[]; // Gemini resets the picker and shows only image thumbnails.
+    }
+    else if(partialUpload){this.files=[];document.body.innerText='logo.png';}
     else if(ignoredFirst && uploads===1){this.files=[];}
     else if(hydration && uploads===1){this.isConnected=false;input=makeInput();}
-    else if(gemini) document.body.innerText += ' ' + this.files.map(file=>file.name).join(' ');
     else document.body.innerText='logo.png product.png';
   }});
   input=makeInput();
@@ -61,7 +66,8 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
     dispatchEvent(){throw new Error('Document-only picker used');}};
   const document = {body: {innerText: fresh?'':missingAttachment ? 'logo.png' : 'logo.png product.png'},
     execCommand(_name,_ui,text){composer.innerText=text;},
-    querySelectorAll: selector => gemini && selector.includes('[role="menuitemradio"]')?[uploadToggle,...(expanded?[signedOut?signIn:uploadMenu]:[])]:
+    querySelectorAll: selector => gemini && selector==='button,[role="button"]'?tiles:
+      gemini && selector.includes('[role="menuitemradio"]')?[uploadToggle,...(expanded?[signedOut?signIn:uploadMenu]:[])]:
       gemini && selector==='user-query'?users:gemini && selector==='model-response'?responses:
       gemini && selector==='input[type="file"]'?[docPicker,...(pickerMounted?[input]:[])]:
       selector==='button,[role=menuitem],[role=option]'?[uploadToggle,...(expanded?[uploadMenu]:[])]:selector==='input[type="file"]' && fresh?(videoFirst?
@@ -81,9 +87,11 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
     atob: value=>Buffer.from(value,'base64').toString('binary'),
     setTimeout: fn => {clock += 500; queueMicrotask(fn);},
     fetch: async source => {fetched++; assert.equal(source, image.currentSrc); return {ok: true, blob: async () => ({type: 'image/png', size: 3})};},
-    falkronaProviderDOM: {normalizePrompt, promptMatches, findComposer: () => composer, findSend: () => send,
+    falkronaProviderDOM: {normalizePrompt, promptMatches, findComposer: () => composer,
+      findSend: () => {if(changeTilesBeforeSend)tiles[0]=geminiTile();return send;},
       messages: kind => kind === 'user' ? users : responses,
-      geminiControl: pattern => geminiControl(pattern, document), geminiFileInput: () => geminiFileInput(document)}
+      geminiControl: pattern => geminiControl(pattern, document), geminiFileInput: () => geminiFileInput(document),
+      geminiAttachments: () => geminiAttachments(document)}
   });
   listener({action: fresh?'generate':'resume', packet}, {}, () => {});
   return {result, stages, clicks: () => clicks, fetched: () => fetched, uploads:()=>uploads, menuClicks:()=>menuClicks};
@@ -158,11 +166,32 @@ test('a partially accepted upload is never repeated or submitted', async () => {
   assert.equal(f.uploads(),1);assert.equal(f.clicks(),0);
 });
 
-test('Gemini skips the document picker and attaches through its image and video picker', async () => {
+test('Gemini confirms nameless thumbnails after clearing its picker and uploads only once', async () => {
   const f=fixture({fresh:true,gemini:true});
   assert.ok((await f.result).image);
   assert.equal(f.uploads(),1);
   assert.equal(f.clicks(),1);
+});
+
+test('Gemini leaves an unsent draft with duplicate thumbnails alone on resume', async () => {
+  const f=fixture({gemini:true,existingGeminiTiles:6});
+  assert.match((await f.result).error,/already has attachments/);
+  assert.equal(f.uploads(),0);
+  assert.equal(f.clicks(),0);
+});
+
+test('Gemini neither retries nor sends a partially confirmed upload', async () => {
+  const f=fixture({fresh:true,gemini:true,partialUpload:true});
+  assert.match((await f.result).error,/confirm every image/);
+  assert.equal(f.uploads(),1);
+  assert.equal(f.clicks(),0);
+});
+
+test('Gemini pauses when a confirmed attachment is replaced before Send', async () => {
+  const f=fixture({fresh:true,gemini:true,changeTilesBeforeSend:true});
+  assert.match((await f.result).error,/attachments changed before Send/);
+  assert.equal(f.uploads(),1);
+  assert.equal(f.clicks(),0);
 });
 
 test('Gemini waits for Add files to initialize and confirms single-file uploads separately', async () => {

@@ -2,7 +2,7 @@
 if (!globalThis.falkronaProviderV3Installed) {
   globalThis.falkronaProviderV3Installed = true;
   const {normalizePrompt, findComposer, findSend, messages, promptMatches,
-    geminiControl, geminiFileInput} = globalThis.falkronaProviderDOM;
+    geminiControl, geminiFileInput, geminiAttachments} = globalThis.falkronaProviderDOM;
   let started = false;
   let cancelled = false;
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -80,6 +80,23 @@ if (!globalThis.falkronaProviderV3Installed) {
     const attached = await waitFor(() => packet.attachments.every(attachmentNamed), 45000);
     if (!attached) pause("The image app did not confirm all attachments. Check its tab; use the saved prompt if needed.");
   }
+  const geminiDraftError = "Gemini already has attachments in this draft. Close this unsent Gemini tab, then continue the saved design in Falkrona.";
+
+  async function confirmGeminiAttachments(expected) {
+    let last = [], stableSince = 0;
+    const confirmed = await waitFor(() => {
+      const tiles = geminiAttachments();
+      if (tiles.length > expected) pause(geminiDraftError);
+      if (tiles.length !== expected || tiles.some((tile, i) => tile !== last[i])) {
+        last = tiles;
+        stableSince = Date.now();
+        return null;
+      }
+      return Date.now() - stableSince >= 1000 ? tiles : null;
+    }, 45000);
+    if (!confirmed) pause("Gemini didn’t confirm every image. Close the unsent Gemini tab, then continue the saved design in Falkrona.");
+    return confirmed;
+  }
   function attachmentNamed(asset) {
     return document.body.innerText.includes(asset.name) || [...document.querySelectorAll('[aria-label],[title]')]
       .some(e => (e.getAttribute('aria-label') || e.title || '').includes(asset.name));
@@ -91,6 +108,7 @@ if (!globalThis.falkronaProviderV3Installed) {
     const responseSelector = packet.provider === "gemini" ? "model-response" : '[data-message-author-role="assistant"]';
     const userMessages = () => packet.provider === "chatgpt" ? messages("user") : [...document.querySelectorAll("user-query")];
     const responses = () => packet.provider === "chatgpt" ? messages("assistant") : [...document.querySelectorAll(responseSelector)];
+    const gemini = packet.provider === "gemini";
     if (resume) {
       const users = userMessages();
       if (users.length === 1 && promptMatches(users[0], packet.prompt)) {
@@ -98,6 +116,7 @@ if (!globalThis.falkronaProviderV3Installed) {
         return receiveImage(packet, responseSelector);
       }
       if (observeOnly || users.length || responses().length) pause("The prior submission needs review. Nothing will be resent.");
+      if (gemini && geminiAttachments().length) pause(geminiDraftError);
       const composer = findComposer();
       if (composer && !normalizePrompt(composer.value || composer.innerText)) {
         const hasFiles = [...document.querySelectorAll('input[type="file"]')].some(input => input.files?.length);
@@ -107,15 +126,15 @@ if (!globalThis.falkronaProviderV3Installed) {
       if (!composer || normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt))
         pause("The prepared message changed or is missing. Nothing was sent.");
       await confirmAttachments(packet);
-      await submit(composer, packet.provider);
+      await submit(composer, packet);
       return receiveImage(packet, responseSelector);
     }
     if (responses().length || userMessages().length) pause("A fresh conversation could not be verified. The helper has not sent it.");
     const emptyComposer = findComposer();
     if (!emptyComposer || normalizePrompt(emptyComposer.value || emptyComposer.innerText))
       pause("The composer is not empty or still loading. Nothing was sent.");
-    const gemini = packet.provider === "gemini";
     if (gemini) {
+      if (geminiAttachments().length) pause(geminiDraftError);
       const picker = geminiControl(/^Open mode picker.*Flash[- ]Lite/i);
       if (picker) {
         picker.click();
@@ -135,17 +154,21 @@ if (!globalThis.falkronaProviderV3Installed) {
       input = await waitFor(uploadInput);
     }
     if (!input) pause("Automatic attachment is unavailable. Use the prepared files in Studio.");
-    if (gemini && !input.multiple) {
-      // Some Gemini layouts expose a single-file picker. Confirm each file
-      // before staging the next, and keep the prompt unsent on any mismatch.
-      for (const asset of packet.attachments) {
-        input = await readyGeminiUploadInput();
-        attachFiles(input, [asset]);
-        await confirmAttachments({attachments: [asset]});
+    let confirmedGeminiTiles;
+    if (gemini) {
+      // Never retry an ambiguous upload. Gemini can clear the file input and
+      // show image tiles without filenames even when it accepted every file.
+      const batches = input.multiple ? [packet.attachments] : packet.attachments.map(asset => [asset]);
+      let expected = 0;
+      for (const files of batches) {
+        if (expected) input = await readyGeminiUploadInput();
+        if (geminiAttachments().length !== expected) pause(geminiDraftError);
+        attachFiles(input, files);
+        expected += files.length;
+        confirmedGeminiTiles = await confirmGeminiAttachments(expected);
       }
-      await confirmAttachments(packet);
     } else {
-      await attachBatch(input, gemini ? readyGeminiUploadInput : () => waitFor(uploadInput));
+      await attachBatch(input);
     }
     const composer = findComposer();
     if (!composer || (composer.value || composer.innerText || '').trim()) pause("The composer is not empty. Nothing was sent.");
@@ -159,10 +182,10 @@ if (!globalThis.falkronaProviderV3Installed) {
     composer.dispatchEvent(new InputEvent("input", {bubbles: true, inputType: "insertText", data: packet.prompt}));
     // Rich editors add paragraph breaks and NBSP. Compare every word, not their spacing.
     if (normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt)) pause("The prompt did not load correctly. Nothing was sent.");
-    await submit(composer, packet.provider);
+    await submit(composer, packet, confirmedGeminiTiles);
     return receiveImage(packet, responseSelector);
 
-    async function attachBatch(input, findInput) {
+    async function attachBatch(input) {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (!input.multiple && packet.attachments.length > 1)
           pause("Automatic attachment is unavailable. Use the prepared files in Studio.");
@@ -176,7 +199,7 @@ if (!globalThis.falkronaProviderV3Installed) {
           .some(e => visible(e) && (e.querySelector('img') || e.textContent.trim()));
         if (attempt === 0 && !hasSelectedFiles && !hasAttachmentPreview && !packet.attachments.some(attachmentNamed)
             && !userMessages().length && !responses().length && editor && !normalizePrompt(editor.value || editor.innerText)) {
-          input = await findInput();
+          input = await waitFor(uploadInput);
           if (input) continue;
         }
         pause("The image app did not confirm all attachments. Check its tab; use the saved prompt if needed.");
@@ -193,10 +216,17 @@ if (!globalThis.falkronaProviderV3Installed) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", {bubbles: true}));
   }
-  async function submit(composer, provider) {
+  async function submit(composer, packet, confirmedGeminiTiles) {
     await progress("ready_to_send");
-    const send = await waitFor(() => findSend(composer, provider), 45000);
+    const send = await waitFor(() => findSend(composer, packet.provider), 45000);
     if (!send) pause("The image app is not ready to send. Check its tab.");
+    if (normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt))
+      pause("The prompt changed before Send. Check the draft in its tab.");
+    if (confirmedGeminiTiles) {
+      const current = geminiAttachments();
+      if (current.length !== confirmedGeminiTiles.length || current.some((tile, i) => tile !== confirmedGeminiTiles[i]))
+        pause("Gemini’s attachments changed before Send. Check the draft in its tab.");
+    }
     // Persist intent BEFORE clicking. Interrupted/uncertain sends must never be repeated.
     await progress("submitted"); send.click();
   }

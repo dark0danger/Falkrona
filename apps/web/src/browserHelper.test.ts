@@ -18,9 +18,9 @@ it("checks a compatible connected image provider before drafting",async()=>{
   expect((await checkImageConnection("chatgpt")).connected).toBe(true);
 });
 it("requires the updated Gemini adapter while accepting the existing ChatGPT helper",async()=>{
-  browser({connected:true,provider:"gemini",helper_version:"0.1.7"});
-  await expect(checkImageConnection("gemini")).rejects.toThrow(/0\.1\.8/);
   browser({connected:true,provider:"gemini",helper_version:"0.1.8"});
+  await expect(checkImageConnection("gemini")).rejects.toThrow(/0\.1\.9/);
+  browser({connected:true,provider:"gemini",helper_version:"0.1.9"});
   expect((await checkImageConnection("gemini")).connected).toBe(true);
 });
 it.each([

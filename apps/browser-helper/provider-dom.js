@@ -45,7 +45,15 @@
     const multiple = candidates.filter(input => input.multiple);
     return multiple.length === 1 ? multiple[0] : candidates.length === 1 ? candidates[0] : null;
   }
-  const api = {normalizePrompt, visible, findComposer, findSend, messages, promptMatches, geminiControl, geminiFileInput};
+  function geminiAttachments(root = document) {
+    // Gemini's image tiles can omit the filename entirely. Each tile still
+    // exposes a visible, separately labelled remove control.
+    return [...root.querySelectorAll('button,[role="button"]')].filter(element => visible(element)
+      && [element.getAttribute("aria-label"), element.getAttribute("title"), element.textContent].some(label =>
+        /^(?:(?:close|remove) attachment|إزالة المرفق|حذف المرفق)$/iu.test(normalizePrompt(label))));
+  }
+  const api = {normalizePrompt, visible, findComposer, findSend, messages, promptMatches,
+    geminiControl, geminiFileInput, geminiAttachments};
   globalThis.falkronaProviderDOM = api;
   if (typeof module !== "undefined") module.exports = api;
 })();

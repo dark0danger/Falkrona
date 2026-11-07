@@ -117,16 +117,18 @@ async function route(message, sender) {
       return {stage: job.stage};
     }
     // Resume the SAME tab: recognize a manual submission instead of creating a duplicate.
+    let resume = true;
     try { await chrome.tabs.get(job.providerTab); }
     catch {
       const existing = job.providerUrl && new URL(job.providerUrl);
       const knownChat = existing && existing.origin === sites[job.provider] && (job.provider === "chatgpt" ? /^\/c\/[a-z0-9-]+$/i.test(existing.pathname) : /^\/app\/[a-z0-9_-]+$/i.test(existing.pathname));
       if (job.submitted && !knownChat) return {stage: "paused", error: "The image tab was closed. Import its finished image from Recovery options; nothing was resent."};
-      const reopened = await chrome.tabs.create({url: job.submitted ? job.providerUrl : packet.url, active: false});
+      const reopened = await chrome.tabs.create({url: job.submitted ? job.providerUrl : packet.url, active: !job.submitted});
       job.providerTab = reopened.id;
+      resume = job.submitted;
     }
     await saveJob({...job, stage: "checking", expiresAt: packet.expires_at});
-    void launch(job.providerTab, packet, true, job.submitted).catch(async () => {
+    void launch(job.providerTab, packet, resume, job.submitted).catch(async () => {
       const {job: current} = await chrome.storage.session.get("job");
       if (current?.runId === packet.run_id) await saveJob({...current, stage: "paused", error: "The existing image tab needs attention. Nothing was resent."});
     });

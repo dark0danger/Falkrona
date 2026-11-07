@@ -139,6 +139,19 @@ test('a closed submitted tab reopens only its bound conversation for observation
   assert.equal(f.sent.at(-1).message.observeOnly,true);
 });
 
+test('closing a paused unsent Gemini draft allows the same run to start in a fresh tab', async () => {
+  const f=fixture();await f.call({action:'start',packet:f.packet});
+  const sender={tab:{id:f.session.job.providerTab},frameId:0,url:f.packet.url};
+  await f.call({action:'provider-result',error:'Duplicate attachments'},sender);
+  f.closeProvider();
+  const resumed=await f.call({action:'start',packet:f.packet});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(resumed.stage,'checking');
+  assert.deepEqual({...f.created.at(-1)},{url:f.packet.url,active:true});
+  assert.equal(f.sent.at(-1).message.action,'generate');
+  assert.equal(f.sent.at(-1).message.packet.run_id,f.packet.run_id);
+});
+
 test('a closed submitted tab without a conversation URL pauses without sending again', async () => {
   const f=fixture();await f.call({action:'start',packet:f.packet});
   await f.call({action:'provider-progress',stage:'submitted'},{tab:{id:f.session.job.providerTab},frameId:0,url:f.packet.url});
