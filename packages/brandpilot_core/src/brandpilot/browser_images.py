@@ -9,7 +9,7 @@ import hmac
 from io import BytesIO
 import secrets
 
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
 
 from .creative import CreativeError, _layer, validate_scene
@@ -18,6 +18,45 @@ from .design_direction import ARTWORK_COPY_RULE, ARTWORK_STYLE_RULE, DesignDirec
 from .models import AgentRun, DesignVersion, WorkspaceAsset
 
 PROVIDERS = {"gemini": "https://gemini.google.com/app", "chatgpt": "https://chatgpt.com/"}
+ASSET_BOARD = (
+    "The single attachment is a labeled source board. Use the large left PRODUCT panel only for physical product identity. "
+    "Use the upper-right LOGO panel as the exact brand logo. Use the lower-right STYLE REFERENCE panel, if present, "
+    "only for visual inspiration. The logo's checkerboard indicates transparency. "
+    "Exclude the board itself, its borders, labels, backgrounds and layout from the finished ad."
+)
+
+
+def _png_attachment(image, role, name):
+    stream = BytesIO()
+    image.save(stream, "PNG")
+    return {"role": role, "name": name, "mime_type": "image/png",
+            "data": base64.b64encode(stream.getvalue()).decode("ascii")}
+
+
+def _asset_board(assets, run_id):
+    board = Image.new("RGB", (1920, 1440), "#e8edf2")
+    draw = ImageDraw.Draw(board)
+    font = ImageFont.load_default(size=34)
+    panels = [
+        ("product", "PRODUCT", (24, 24, 1096, 1416)),
+        ("logo", "LOGO", (1120, 24, 1896, 672 if "reference" in assets else 1416)),
+    ]
+    if "reference" in assets:
+        panels.append(("reference", "STYLE REFERENCE", (1120, 696, 1896, 1416)))
+    for role, label, (left, top, right, bottom) in panels:
+        draw.rectangle((left, top, right, bottom), fill="white")
+        draw.text((left + 24, top + 16), label, fill="#162333", font=font)
+        area_top = top + 70
+        image = ImageOps.contain(assets[role], (right - left - 48, bottom - area_top - 24), Image.Resampling.LANCZOS)
+        x, y = (left + right - image.width) // 2, (area_top + bottom - image.height) // 2
+        if role == "logo":
+            for grid_y in range(y, y + image.height, 32):
+                for grid_x in range(x, x + image.width, 32):
+                    color = "#cbd5e1" if ((grid_x - x) // 32 + (grid_y - y) // 32) % 2 else "#64748b"
+                    draw.rectangle((grid_x, grid_y, min(grid_x + 31, x + image.width - 1),
+                        min(grid_y + 31, y + image.height - 1)), fill=color)
+        board.paste(image, (x, y), image)
+    return _png_attachment(board, "asset_board", f"falkrona-assets-{run_id}.png")
 
 
 class BrowserImageService:
@@ -52,15 +91,17 @@ class BrowserImageService:
             handoff = row.checkpoint.get("browser_handoff")
             # Existing provider chats are matched against the original prompt, even after expiry.
             prompt_version = handoff.get("prompt_version", 1) if handoff else 2
+            use_board = provider == "chatgpt" and (not handoff or handoff.get("asset_board", False))
             now = datetime.now(timezone.utc)
             if handoff and datetime.fromisoformat(handoff["expires_at"]) > now:
                 if handoff["provider"] != provider or handoff["user_id"] != principal.user_id:
                     raise CreativeError("handoff_in_progress", "Finish the current image-app request before changing services.")
             else:
                 handoff = {"nonce": secrets.token_urlsafe(32), "provider": provider, "prompt_version": prompt_version,
+                    "asset_board": use_board,
                     "user_id": principal.user_id, "expires_at": (now + timedelta(minutes=30)).isoformat()}
                 row.checkpoint = {**row.checkpoint, "browser_handoff": handoff}
-            attachments = []
+            assets = {}
             for visual in row.checkpoint["visual_assets"]:
                 asset = session.scalar(select(WorkspaceAsset).where(WorkspaceAsset.workspace_id == workspace,
                     WorkspaceAsset.id == visual["id"], WorkspaceAsset.status == "ready", WorkspaceAsset.source == "upload"))
@@ -73,9 +114,10 @@ class BrowserImageService:
                 with Image.open(BytesIO(content)) as source:
                     image = ImageOps.exif_transpose(source).convert("RGBA")
                     image.thumbnail((2048, 2048)); image.info.clear()
-                    stream = BytesIO(); image.save(stream, "PNG")
-                attachments.append({"role": visual["role"], "name": f"{len(attachments)+1}-{visual['role']}.png",
-                    "mime_type": "image/png", "data": base64.b64encode(stream.getvalue()).decode("ascii")})
+                assets[visual["role"]] = image
+            attachments = [_asset_board(assets, row.id)] if use_board else [
+                _png_attachment(image, role, f"{index}-{role}.png")
+                for index, (role, image) in enumerate(assets.items(), start=1)]
             copy = (f"\nExact headline: {direction.headline}\nExact CTA: {direction.cta}\n"
                 f"Language: {direction.language}. No additional invented text or claims.")
             if direction.language == "ar":
@@ -86,11 +128,17 @@ class BrowserImageService:
             scene_prompt = direction.image_prompt
             if prompt_version == 2 and direction.caption not in (direction.headline, direction.cta):
                 scene_prompt = scene_prompt.replace(direction.caption, "")
+            if use_board:
+                # The planner still receives and describes the assets individually.
+                import re
+                panel_names = {"1": "LOGO", "2": "PRODUCT", "3": "STYLE REFERENCE"}
+                scene_prompt = re.sub(r"\battachments?\s+([123])\b",
+                    lambda match: f"the {panel_names[match[1]]} panel", scene_prompt, flags=re.IGNORECASE)
+            asset_guide = ASSET_BOARD if use_board else (
+                "Attachment 1 = exact brand logo; attachment 2 = product identity ONLY, discard its background and composition; "
+                "attachment 3 if present = optional style reference ONLY. Preserve the real product and logo.")
             prompt = ("Generate ONE finished advertising image, portrait 4:5 (1080x1350). "
-                "Use your image-generation tool, not a textual description. Attachment 1 = exact brand logo; "
-                "attachment 2 = product identity ONLY, discard its background and composition; "
-                "attachment 3 if present = optional style reference ONLY. Preserve the real product and logo.\n\n"
-                + scene_prompt)
+                "Use your image-generation tool, not a textual description. " + asset_guide + "\n\n" + scene_prompt)
             if prompt_version == 1:
                 prompt += copy
             if row.checkpoint.get("pipeline_version") == 5:
@@ -105,7 +153,8 @@ class BrowserImageService:
                 if observation is None:
                     raise CreativeError("product_identity_missing", "Prepare a new direction that separates the product from its scenery.")
                 prompt += ("\n\nMANDATORY VISUAL CONTRACT — applies to the entire image above:\n"
-                    "Make a new photograph/composition. Extract or recreate ONLY the physical product from attachment 2; "
+                    "Make a new photograph/composition. Extract or recreate ONLY the physical product from "
+                    + ("the PRODUCT panel; " if use_board else "attachment 2; ") +
                     "do not reuse that photo, its backdrop, props, surface, crop, lighting arrangement or scene with added text. "
                     "The supplied image is an identity sheet, never a layout template.\n"
                     "Show the actual packaged product prominently with its real label visible. A generic drink or serving glass "

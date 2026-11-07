@@ -68,9 +68,11 @@ async function route(message, sender) {
       return {ok:true};
     }
     if (message.action === "provider-progress") {
-      if (!["attaching", "ready_to_send", "submitted", "generating"].includes(message.stage)) throw new Error("Unknown image stage.");
+      if (!["attaching", "uploading", "ready_to_send", "submitted", "generating"].includes(message.stage)) throw new Error("Unknown image stage.");
       if (message.stage === "generating" && !job.submitted) throw new Error("Submission has not been recorded.");
-      await saveJob({...job, stage: message.stage, providerUrl: sender.url, submitted: job.submitted || message.stage === "submitted"});
+      await saveJob({...job, stage: message.stage === "uploading" ? "attaching" : message.stage,
+        providerUrl: sender.url, submitted: job.submitted || message.stage === "submitted",
+        uploadAttempted: job.uploadAttempted || message.stage === "uploading"});
       if (message.stage === "generating" && !job.returnedToOwner) {
         await saveJob({...await readJob(), returnedToOwner: true});
         await returnToOwner(job);
@@ -103,8 +105,10 @@ async function route(message, sender) {
   }
   if (message.action !== "start") throw new Error("Unknown request.");
   const packet = message.packet;
-  if (!packet || !uuid.test(packet.run_id) || !uuid.test(packet.workspace_id) || packet.provider !== connection.provider || packet.url !== (packet.provider === "gemini" ? sites.gemini + "/app" : sites.chatgpt + "/") || !packet.nonce || Date.parse(packet.expires_at) <= Date.now() || !Array.isArray(packet.attachments) || packet.attachments.length < 2 || packet.attachments.length > 3 || typeof packet.prompt !== "string" || packet.prompt.length > 12000) throw new Error("Invalid generation packet.");
-  if (packet.attachments.map(a => a.role).join(",") !== (packet.attachments.length === 3 ? "logo,product,reference" : "logo,product")) throw new Error("Image roles changed.");
+  if (!packet || !uuid.test(packet.run_id) || !uuid.test(packet.workspace_id) || packet.provider !== connection.provider || packet.url !== (packet.provider === "gemini" ? sites.gemini + "/app" : sites.chatgpt + "/") || !packet.nonce || Date.parse(packet.expires_at) <= Date.now() || !Array.isArray(packet.attachments) || typeof packet.prompt !== "string" || packet.prompt.length > 12000) throw new Error("Invalid generation packet.");
+  const roles = packet.attachments.map(asset => asset?.role).join(",");
+  if (roles !== "logo,product" && roles !== "logo,product,reference" && !(packet.provider === "chatgpt" && roles === "asset_board"))
+    throw new Error("Image roles changed.");
   const {job: activeJob} = await chrome.storage.session.get("job");
   if (activeJob?.runId !== packet.run_id && activeJob && !["complete", "paused"].includes(activeJob.stage) && Date.parse(activeJob.expiresAt) > Date.now()) throw new Error("Finish the current image first.");
   if (message.resumeOnly && job?.runId !== packet.run_id)
@@ -126,9 +130,10 @@ async function route(message, sender) {
       const reopened = await chrome.tabs.create({url: job.submitted ? job.providerUrl : packet.url, active: !job.submitted});
       job.providerTab = reopened.id;
       resume = job.submitted;
+      if (!job.submitted) job.uploadAttempted = false;
     }
     await saveJob({...job, stage: "checking", expiresAt: packet.expires_at});
-    void launch(job.providerTab, packet, resume, job.submitted).catch(async () => {
+    void launch(job.providerTab, packet, resume, job.submitted, job.uploadAttempted).catch(async () => {
       const {job: current} = await chrome.storage.session.get("job");
       if (current?.runId === packet.run_id) await saveJob({...current, stage: "paused", error: "The existing image tab needs attention. Nothing was resent."});
     });
@@ -149,7 +154,7 @@ async function route(message, sender) {
     return {stage: "opening"};
   } finally { starting = false; }
 }
-async function launch(tabId, packet, resume = false, observeOnly = false) {
+async function launch(tabId, packet, resume = false, observeOnly = false, uploadAttempted = false) {
   // Start when the provider document can receive messages, without waiting for
   // unrelated page resources. The adapter itself waits for hydrated controls.
   for (let attempt = 0; attempt < 60; attempt++) {
@@ -160,7 +165,7 @@ async function launch(tabId, packet, resume = false, observeOnly = false) {
     }
     try {
       await chrome.scripting.executeScript({target: {tabId}, files: ["provider-dom.js", "provider.js"]});
-      const accepted = await chrome.tabs.sendMessage(tabId, {action: resume ? "resume" : "generate", packet, observeOnly});
+      const accepted = await chrome.tabs.sendMessage(tabId, {action: resume ? "resume" : "generate", packet, observeOnly, uploadAttempted});
       if (accepted?.accepted) return;
       // A running adapter must never receive a second generation command.
       throw new Error("The image adapter is already busy. Resume the saved request.");

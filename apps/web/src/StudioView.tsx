@@ -489,7 +489,7 @@ export function StudioView({ workspaceId, csrf, selection, assets, branding, ope
         <div className="studio-fields"><a href={packet.url} target="_blank" rel="noreferrer">Open {packet.provider === "gemini" ? "Gemini" : "ChatGPT"}</a>
           <button className="icon-button" type="button" onClick={() => {void navigator.clipboard.writeText(packet.prompt).catch(() => setError("Copy the prompt below."));}}>Copy prompt</button>
           <details><summary>Prompt and reference files</summary><textarea readOnly value={packet.prompt} />
-            {packet.attachments.map(asset => <button className="icon-button" type="button" key={asset.role} onClick={() => downloadAttachment(asset.name, asset.data, asset.mime_type)}>Download {asset.role === "product" ? "product photo" : asset.role}</button>)}
+            {packet.attachments.map(asset => <button className="icon-button" type="button" key={asset.role} onClick={() => downloadAttachment(asset.name, asset.data, asset.mime_type)}>Download {asset.role === "asset_board" ? "source board" : asset.role === "product" ? "product photo" : asset.role}</button>)}
           </details>
           <label>Import finished image<input type="file" accept=".png,.jpg,.jpeg,.webp" disabled={Boolean(busy)} onChange={event => {
             const file = event.target.files?.[0]; if(!file) return; setBusy("import"); setError("");

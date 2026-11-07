@@ -14,10 +14,12 @@ function browser(result:unknown, origin="https://falkrona.example") {
 }
 afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();});
 it("checks a compatible connected image provider before drafting",async()=>{
-  browser({connected:true,provider:"chatgpt",helper_version:"0.1.7"});
+  browser({connected:true,provider:"chatgpt",helper_version:"0.1.10"});
   expect((await checkImageConnection("chatgpt")).connected).toBe(true);
 });
-it("requires the updated Gemini adapter while accepting the existing ChatGPT helper",async()=>{
+it("requires each provider's minimum compatible helper",async()=>{
+  browser({connected:true,provider:"chatgpt",helper_version:"0.1.9"});
+  await expect(checkImageConnection("chatgpt")).rejects.toThrow(/0\.1\.10/);
   browser({connected:true,provider:"gemini",helper_version:"0.1.8"});
   await expect(checkImageConnection("gemini")).rejects.toThrow(/0\.1\.9/);
   browser({connected:true,provider:"gemini",helper_version:"0.1.9"});

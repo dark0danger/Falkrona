@@ -6,7 +6,7 @@ export type HelperResult = {connected?: boolean; provider?: ImageApp; helper_ver
 
 export function requireCurrentHelper(version?: string, provider?: ImageApp) {
   const patch = /^0\.1\.(\d+)$/.exec(version ?? "");
-  const minimum = provider === "gemini" ? 9 : 7;
+  const minimum = provider === "chatgpt" ? 10 : provider === "gemini" ? 9 : 7;
   if (!patch || Number(patch[1]) < minimum)
     throw new Error(`Update Falkrona Browser Helper to 0.1.${minimum} or later from Accounts, click Reload in Extensions, then refresh Falkrona.`);
 }

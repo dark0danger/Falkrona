@@ -158,26 +158,47 @@ class CreativeDirectionHandler:
             weekly_repair_used = False
             direction_repair_used = False
 
-            def complete_direction(instructions, visuals=None):
+            def complete_direction(instructions, visuals=None, draft=None):
                 nonlocal direction_repair_used
 
                 def call(text):
                     if isinstance(self.executor, HermesCreativeExecutor):
-                        return self.executor(text, model, progress,
+                        response = self.executor(text, model, progress,
                             schema=checkpoint.get("response_schema") or direction_schema(), images=visuals)
-                    return self.executor(text, model, progress)
+                    else:
+                        response = self.executor(text, model, progress)
+                    if response.get("model_calls", 0) != 1:
+                        raise Phase4Error("invalid_usage", "The runtime exceeded its single-call contract.")
+                    direction = DesignDirection.model_validate_json(response["text"]).model_dump()
+                    if not direction["product_observation"]:
+                        raise Phase4Error("product_identity_missing", "The brief must describe the actual product separately from its background.")
+                    if draft is not None:
+                        validate_review(draft, direction, "creative.direction")
+                    else:
+                        requested = checkpoint["inputs"].get("language", "auto")
+                        if requested in {"ar", "en"} and (direction["language"] != requested or not all(
+                            any(c.isalpha() and ("\u0600" <= c <= "\u06ff" if requested == "ar" else c.isascii())
+                                for c in direction[field]) for field in ("headline", "cta", "caption")
+                        )):
+                            raise Phase4Error("language_mismatch", "The brief did not use the selected language.")
+                    return direction, response
 
                 try:
                     return call(instructions)
-                except Phase4Error as exc:
-                    if exc.code != "gemini_incomplete_response" or direction_repair_used:
+                except (ValidationError, Phase4Error) as exc:
+                    if direction_repair_used or (isinstance(exc, Phase4Error) and exc.code not in {
+                        "gemini_incomplete_response", "product_identity_missing", "language_mismatch",
+                        "editorial_contract_changed", "copy_prompt_mismatch",
+                    }):
                         raise
 
+                requested = checkpoint["inputs"].get("language", "auto")
+                language = {"ar": "Arabic", "en": "English"}.get(requested, "the requested language")
                 repair = instructions + (
                     "\nReturn one complete, compact JSON object without commentary. "
-                    "Keep the idea and image prompt concise. Preserve required facts, the selected "
-                    "language, the exact headline and CTA in the image prompt, and all immutable "
-                    "fields from any draft you are editing."
+                    f"Write the headline, CTA and caption in {language}. Include the exact headline and CTA "
+                    "in the concise image prompt. Describe the physical product separately from the scenery. "
+                    "Preserve all required facts and immutable fields from any draft you are editing."
                 )
                 self.phase4.admit_model_call(workspace, run_id,
                     input_tokens=len(repair.encode()) // 2 + 4000 + 2048 * len(visuals or []), output_tokens=4000)
@@ -252,21 +273,8 @@ class CreativeDirectionHandler:
                                 preview.info.clear()
                                 buffer = BytesIO(); preview.save(buffer, "PNG")
                             images.append({"role": visual["role"], "data_url": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")})
-                result = complete_direction(prompt, images)
-                validated = {"direction": DesignDirection.model_validate_json(result["text"]).model_dump()}
-                if not validated["direction"]["product_observation"]:
-                    raise Phase4Error("product_identity_missing", "Gemini must distinguish the actual product from its photo's scenery.")
-                requested_language = checkpoint["inputs"].get("language", "auto")
-                if requested_language in {"ar", "en"} and validated["direction"]["language"] != requested_language:
-                    raise Phase4Error("language_mismatch", "Gemini did not use your selected design language. Try again.")
-                if requested_language in {"ar", "en"}:
-                    copy = [validated["direction"][field] for field in ("headline", "cta", "caption")]
-                    def has_selected_letters(text):
-                        return any(character.isalpha() and (
-                            "\u0600" <= character <= "\u06ff" if requested_language == "ar" else character.isascii())
-                            for character in text)
-                    if not all(has_selected_letters(text) for text in copy):
-                        raise Phase4Error("language_mismatch", "Gemini did not write the copy in your selected language. Try again.")
+                direction, result = complete_direction(prompt, images)
+                validated = {"direction": direction}
             if result.get("model_calls", 0) != 1:
                 raise Phase4Error("invalid_usage", "The runtime exceeded its single-call contract.")
             if checkpoint.get("editorial_version") == 1 and claim.kind in {"planning.week", "creative.direction"}:
@@ -285,12 +293,9 @@ class CreativeDirectionHandler:
                     row.checkpoint = {**row.checkpoint, "stage": "editing"}
                 if field == "plan":
                     parsed, reviewed = complete_week_json(editing)
+                    validate_review(draft, parsed, claim.kind)
                 else:
-                    reviewed = complete_direction(editing)
-                    if reviewed.get("model_calls", 0) != 1:
-                        raise Phase4Error("invalid_usage", "The editorial pass exceeded its single-call contract.")
-                    parsed = DesignDirection.model_validate_json(reviewed["text"]).model_dump()
-                validate_review(draft, parsed, claim.kind)
+                    parsed, reviewed = complete_direction(editing, draft=draft)
                 validated[field] = parsed
                 validated["editorial_review"] = {"version": 1, "status": "completed", "model_calls":
                     3 if weekly_repair_used or direction_repair_used else 2}
@@ -349,9 +354,11 @@ class CreativeDirectionHandler:
                             for error in exc.errors(include_input=False, include_url=False)[:8]]}
                     row.last_error, row.completed_at = code, utc_now()
                     if (claim.kind == "planning.week" and hasattr(exc, "code")) or (
-                        claim.kind == "creative.direction" and code in PROVIDER_FAILURE_MESSAGES
+                        claim.kind == "creative.direction" and isinstance(exc, Phase4Error)
                     ):
                         row.output = {**row.output, "failure_message": str(exc)[:400]}
                     elif claim.kind == "planning.week" and isinstance(exc, ValidationError):
                         row.output = {**row.output, "failure_message": "Gemini returned an incomplete plan. Try drafting again."}
+                    elif claim.kind == "creative.direction" and isinstance(exc, ValidationError):
+                        row.output = {**row.output, "failure_message": "The planner returned an incomplete design brief. Continue creating designs to retry this post."}
             self.store.fail(claim.id, claim.lease_owner, code, retryable=False)

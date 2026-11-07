@@ -125,7 +125,7 @@ def test_editor_cannot_break_image_handoff_contract(flow, failure):
     def executor(*_):
         calls.append(1)
         value = deepcopy(DIRECTION)
-        if len(calls) == 2:
+        if len(calls) >= 2:
             if failure == "copy_prompt_mismatch":
                 value["headline"] = "A completely different headline"
             elif failure == "editorial_contract_changed":
@@ -136,6 +136,31 @@ def test_editor_cannot_break_image_handoff_contract(flow, failure):
     flow.execute(executor)
     saved = flow.client.get(f"{flow.base}/agent-runs/{run['id']}").json()
     assert saved["last_error"] == failure, saved
+    assert len(calls) == 3
+
+
+def test_editor_repairs_invalid_copy_before_chatgpt_handoff(flow):
+    run = flow.client.post(flow.path, headers=flow.csrf, json=flow.inputs).json()
+    invalid_review = {**DIRECTION, "headline": "This headline is absent from the prompt"}
+    replies = iter((DIRECTION, invalid_review, DIRECTION))
+    flow.execute(lambda *_: result(next(replies)))
+    path = f"{flow.base}/agent-runs/{run['id']}"
+    saved = flow.client.get(path).json()
+    assert saved["status"] == "completed", saved
+    assert saved["output"]["editorial_review"]["model_calls"] == 3
+    packet = flow.client.post(path + "/browser-packet", headers=flow.csrf,
+        json={"provider": "chatgpt", "consent": True})
+    assert packet.status_code == 200, packet.text
+    assert [asset["role"] for asset in packet.json()["attachments"]] == ["asset_board"]
+
+
+def test_incomplete_initial_brief_is_repaired_and_reviewed_once(flow):
+    run = flow.client.post(flow.path, headers=flow.csrf, json=flow.inputs).json()
+    replies = iter(({"headline": "Incomplete brief"}, DIRECTION, DIRECTION))
+    flow.execute(lambda *_: result(next(replies)))
+    saved = flow.client.get(f"{flow.base}/agent-runs/{run['id']}").json()
+    assert saved["status"] == "completed", saved
+    assert saved["output"]["editorial_review"]["model_calls"] == 3
 
 
 def test_polished_copy_is_the_copy_sent_to_image_app(flow):

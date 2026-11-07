@@ -41,6 +41,23 @@ test('starts in a foreground tab and receives commands before full page load', a
   assert.equal(f.sent[0].message.action,'generate');
   assert.equal((await f.call({action:'status'})).helper_version,'0.1.7');
 });
+
+test('only ChatGPT accepts a single board and remembers an attempted upload after reload', async () => {
+  const gemini = fixture();
+  const board = [{role:'asset_board'}];
+  assert.match((await gemini.call({action:'start',packet:{...gemini.packet,attachments:board}})).error,/roles changed/);
+  const f = fixture(true,'chatgpt');
+  const packet = {...f.packet,attachments:board};
+  await f.call({action:'start',packet});
+  const sender = {tab:{id:f.session.job.providerTab},frameId:0,url:packet.url};
+  await f.call({action:'provider-progress',stage:'uploading'},sender);
+  await f.call({action:'provider-result',error:'Upload unconfirmed'},sender);
+  delete f.session.job;
+  await f.call({action:'start',packet});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.opened(),1);
+  assert.equal(f.sent.at(-1).message.uploadAttempted,true);
+});
 test('one run opens one fresh tab and never resubmits after an interruption', async () => {
   const f = fixture();
   await f.call({action: 'start', packet: f.packet});

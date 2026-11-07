@@ -218,6 +218,22 @@ class DirectionTests(unittest.TestCase):
             self.assertEqual(reopened.status_code, 200, reopened.text)
             self.assertEqual(reopened.json()["prompt"], packet["prompt"])
 
+    def test_existing_chatgpt_handoff_keeps_its_original_separate_files(self):
+        from datetime import datetime, timedelta, timezone
+        run = self.client.post(self.path, headers=self.csrf, json=self.inputs).json()
+        self.execute(lambda *_: {"text": json.dumps(DIRECTION), "model_calls": 1})
+        with self.sessions() as session, session.begin():
+            row = session.get(AgentRun, run["id"])
+            row.checkpoint = {**row.checkpoint, "browser_handoff": {
+                "nonce": "existing-request", "provider": "chatgpt", "prompt_version": 2,
+                "user_id": "fixture-user",
+                "expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+            }}
+        packet = self.client.post(f"{self.base}/agent-runs/{run['id']}/browser-packet", headers=self.csrf,
+            json={"provider": "chatgpt", "consent": True})
+        self.assertEqual(packet.status_code, 200, packet.text)
+        self.assertEqual([asset["role"] for asset in packet.json()["attachments"]], ["logo", "product"])
+
     def test_browser_direction_uses_two_bounded_calls(self):
         self.app.state.phase4._max_model_calls = 2
         run = self.client.post(self.path, headers=self.csrf, json=self.inputs).json()
@@ -250,6 +266,19 @@ class DirectionTests(unittest.TestCase):
             with Image.open(BytesIO(base64.b64decode(image["data_url"].split(",", 1)[1]))) as preview:
                 self.assertLessEqual(max(preview.size), 512)
                 self.assertNotIn("Owner_note", preview.info)
+        packet_path = f"{self.base}/agent-runs/{run['id']}/browser-packet"
+        board = self.client.post(packet_path, headers=self.csrf, json={"provider": "chatgpt", "consent": True})
+        self.assertEqual(board.status_code, 200, board.text)
+        payload = board.json()
+        self.assertEqual([asset["role"] for asset in payload["attachments"]], ["asset_board"])
+        self.assertIn("lower-right STYLE REFERENCE panel", payload["prompt"])
+        self.assertNotIn("attachment 2", payload["prompt"].lower())
+        with Image.open(BytesIO(base64.b64decode(payload["attachments"][0]["data"]))) as image:
+            self.assertEqual(image.size, (1920, 1440))
+            self.assertEqual(image.getpixel((1500, 1050)), (255, 165, 0))
+            self.assertNotIn("Owner_note", image.info)
+        reopened = self.client.post(packet_path, headers=self.csrf, json={"provider": "chatgpt", "consent": True})
+        self.assertEqual(reopened.json(), payload)
         another = self.client.post(f"{self.base}/branding/assets/reference", headers=self.csrf,
             files={"file": ("other-example.png", self.png((120, 150)), "image/png")}).json()
         complete_branding(self.client, self.base, self.csrf, logo=self.inputs["logo_asset_id"], reference=another["id"])
@@ -264,12 +293,13 @@ class DirectionTests(unittest.TestCase):
         result = self.client.get(f"{self.base}/agent-runs/{run['id']}").json()
         self.assertEqual(result["status"], "failed")
         self.assertEqual(self.client.get(self.design_path).json()["current"]["id"], self.first["id"])
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("incomplete design brief", result["output"]["failure_message"])
         self.inputs["product_description"] = "A new brief"
         self.app.state.phase4._max_input_tokens = 1
         run = self.client.post(self.path, headers=self.csrf, json=self.inputs).json()
         self.execute(lambda *_: calls.append(True))
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         self.assertEqual(self.client.get(f"{self.base}/agent-runs/{run['id']}").json()["last_error"], "quota_exhausted")
 
     def test_free_mode_blocks_private_context_and_requires_public_attestation(self):

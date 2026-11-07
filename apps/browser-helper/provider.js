@@ -10,7 +10,7 @@ if (!globalThis.falkronaProviderV3Installed) {
     if (!["generate", "resume"].includes(message.action) || started) return;
     started = true;
     respond({accepted: true});
-    void generate(message.packet, message.action === "resume", Boolean(message.observeOnly))
+    void generate(message.packet, message.action === "resume", Boolean(message.observeOnly), Boolean(message.uploadAttempted))
       .catch(error => chrome.runtime.sendMessage({action: "provider-result", error: error.message}))
       .finally(() => { started = false; });
   });
@@ -18,28 +18,29 @@ if (!globalThis.falkronaProviderV3Installed) {
   const buttons = () => [...document.querySelectorAll("button,[role=menuitem],[role=option]")].filter(visible);
   const label = element => element.getAttribute("aria-label") || element.textContent.trim();
   const button = expression => buttons().find(element => expression.test(label(element)));
-  function uploadInput() {
+  function uploadInput(attachmentCount = 2) {
     const inputs = [...document.querySelectorAll('input[type="file"]')]
-      .filter(e => e.multiple && !/camera/i.test(e.id));
+      .filter(e => (e.multiple || attachmentCount === 1) && !e.disabled && !e.webkitdirectory && !/camera|folder/i.test(e.id));
     // ChatGPT now mounts three inputs. The first is its video picker, even in
     // a text chat; use the ordinary attachment picker instead of DOM order.
     return inputs.find(e => /^(Attach files|إرفاق ملفات)$/i.test(e.getAttribute?.("aria-label") || ""))
       || inputs.find(e => /^(Attach photos|إرفاق صور)$/i.test(e.getAttribute?.("aria-label") || ""))
       || inputs.find(e => !/video/i.test(e.getAttribute?.("accept") || ""));
   }
-  async function readyChatGPTUploadInput() {
+  async function readyChatGPTUploadInput(attachmentCount) {
+    const findToggle = () => button(/^(Add files and more|Add files|Attach files|إضافة ملفات|إرفاق ملفات)$/i);
     // The server-rendered composer/input can appear before React accepts files.
     // Verify a real interaction first; an opened upload menu proves hydration.
     const ready = await waitFor(() => {
       if (button(/Add photos.*files|Upload from computer|تحميل من الكمبيوتر/i)) return true;
-      const toggle = button(/^Add files and more$/i);
+      const toggle = findToggle();
       if (toggle && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
       return null;
     }, 60000);
     if (!ready) pause("ChatGPT's upload controls are still loading. Continue creating designs to resume this saved request.");
-    const toggle = button(/^Add files and more$/i);
+    const toggle = findToggle();
     if (toggle?.getAttribute("aria-expanded") === "true") toggle.click();
-    return waitFor(uploadInput);
+    return waitFor(() => uploadInput(attachmentCount));
   }
   async function readyGeminiUploadInput() {
     let opened = false, choseLocal = false;
@@ -98,10 +99,14 @@ if (!globalThis.falkronaProviderV3Installed) {
     return confirmed;
   }
   function attachmentNamed(asset) {
-    return document.body.innerText.includes(asset.name) || [...document.querySelectorAll('[aria-label],[title]')]
-      .some(e => (e.getAttribute('aria-label') || e.title || '').includes(asset.name));
+    return document.body.innerText.includes(asset.name) || [...document.querySelectorAll('[aria-label],[title],[alt]')]
+      .some(e => ["aria-label", "title", "alt"].some(attribute => (e.getAttribute(attribute) || "").includes(asset.name)));
   }
-  async function generate(packet, resume = false, observeOnly = false) {
+  function chatgptPreviews() {
+    return [...document.querySelectorAll('[data-composer-attachments] img')].filter(visible);
+  }
+  const chatgptDraftError = "ChatGPT already has attachments in this draft. Close the unsent ChatGPT tab and continue the saved design in Falkrona.";
+  async function generate(packet, resume = false, observeOnly = false, uploadAttempted = false) {
     if (location.origin !== (packet.provider === "gemini" ? "https://gemini.google.com" : "https://chatgpt.com")) pause("Open your image app and sign in, then use the saved prompt in Studio.");
     await waitFor(() => findComposer(), 60000);
     if (button(/^(Sign in|Log in|تسجيل الدخول)$/i)) pause("Sign in to your image app first. Your direction is saved; the helper has not sent it.");
@@ -109,6 +114,7 @@ if (!globalThis.falkronaProviderV3Installed) {
     const userMessages = () => packet.provider === "chatgpt" ? messages("user") : [...document.querySelectorAll("user-query")];
     const responses = () => packet.provider === "chatgpt" ? messages("assistant") : [...document.querySelectorAll(responseSelector)];
     const gemini = packet.provider === "gemini";
+    const board = !gemini && packet.attachments.length === 1 && packet.attachments[0].role === "asset_board";
     if (resume) {
       const users = userMessages();
       if (users.length === 1 && promptMatches(users[0], packet.prompt)) {
@@ -120,19 +126,22 @@ if (!globalThis.falkronaProviderV3Installed) {
       const composer = findComposer();
       if (composer && !normalizePrompt(composer.value || composer.innerText)) {
         const hasFiles = [...document.querySelectorAll('input[type="file"]')].some(input => input.files?.length);
+        if (board && (uploadAttempted || chatgptPreviews().length || hasFiles || packet.attachments.some(attachmentNamed)))
+          pause("ChatGPT already tried to attach the source board. Close the unsent tab and continue the saved design in Falkrona.");
         if (!hasFiles && !packet.attachments.some(attachmentNamed))
           return generate(packet, false, false); // Known empty login pause, no prior message/upload.
       }
       if (!composer || normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt))
         pause("The prepared message changed or is missing. Nothing was sent.");
       await confirmAttachments(packet);
-      await submit(composer, packet);
+      await submit(composer, packet, undefined, board);
       return receiveImage(packet, responseSelector);
     }
     if (responses().length || userMessages().length) pause("A fresh conversation could not be verified. The helper has not sent it.");
     const emptyComposer = findComposer();
     if (!emptyComposer || normalizePrompt(emptyComposer.value || emptyComposer.innerText))
       pause("The composer is not empty or still loading. Nothing was sent.");
+    if (board && (chatgptPreviews().length || packet.attachments.some(attachmentNamed))) pause(chatgptDraftError);
     if (gemini) {
       if (geminiAttachments().length) pause(geminiDraftError);
       const picker = geminiControl(/^Open mode picker.*Flash[- ]Lite/i);
@@ -144,14 +153,14 @@ if (!globalThis.falkronaProviderV3Installed) {
       }
     }
     await progress("attaching");
-    let input = await (gemini ? readyGeminiUploadInput() : readyChatGPTUploadInput());
+    let input = await (gemini ? readyGeminiUploadInput() : readyChatGPTUploadInput(packet.attachments.length));
     if (!gemini && !input) {
       const upload = button(/Upload & tools|Add files and more|إضافة ملفات|تحميل/i);
       if (!upload) pause("The upload controls changed. Download the prepared images from Studio.");
       upload.click();
       const local = await waitFor(() => button(/Upload files|Upload from computer|تحميل ملفات|تحميل من الكمبيوتر/i), 3000);
       if (local) local.click();
-      input = await waitFor(uploadInput);
+      input = await waitFor(() => uploadInput(packet.attachments.length));
     }
     if (!input) pause("Automatic attachment is unavailable. Use the prepared files in Studio.");
     let confirmedGeminiTiles;
@@ -167,6 +176,18 @@ if (!globalThis.falkronaProviderV3Installed) {
         expected += files.length;
         confirmedGeminiTiles = await confirmGeminiAttachments(expected);
       }
+    } else if (board) {
+      if (chatgptPreviews().length || packet.attachments.some(attachmentNamed)) pause(chatgptDraftError);
+      await progress("uploading");
+      attachFiles(input, packet.attachments);
+      // A filename or preview from this fresh draft can confirm the one upload.
+      // Once dispatched, an ambiguous result never triggers another upload.
+      const attached = await waitFor(() => {
+        const previews = chatgptPreviews();
+        if (previews.length > 1) pause(chatgptDraftError);
+        return packet.attachments.some(attachmentNamed) || previews.some(img => img.complete && img.naturalWidth > 0);
+      }, 45000);
+      if (!attached) pause("ChatGPT didn’t confirm the source board. Check its tab for an upload limit or use the saved prompt in Studio.");
     } else {
       await attachBatch(input);
     }
@@ -182,7 +203,7 @@ if (!globalThis.falkronaProviderV3Installed) {
     composer.dispatchEvent(new InputEvent("input", {bubbles: true, inputType: "insertText", data: packet.prompt}));
     // Rich editors add paragraph breaks and NBSP. Compare every word, not their spacing.
     if (normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt)) pause("The prompt did not load correctly. Nothing was sent.");
-    await submit(composer, packet, confirmedGeminiTiles);
+    await submit(composer, packet, confirmedGeminiTiles, board);
     return receiveImage(packet, responseSelector);
 
     async function attachBatch(input) {
@@ -216,12 +237,18 @@ if (!globalThis.falkronaProviderV3Installed) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", {bubbles: true}));
   }
-  async function submit(composer, packet, confirmedGeminiTiles) {
+  async function submit(composer, packet, confirmedGeminiTiles, board = false) {
     await progress("ready_to_send");
     const send = await waitFor(() => findSend(composer, packet.provider), 45000);
     if (!send) pause("The image app is not ready to send. Check its tab.");
     if (normalizePrompt(composer.value || composer.innerText) !== normalizePrompt(packet.prompt))
       pause("The prompt changed before Send. Check the draft in its tab.");
+    if (board) {
+      const previews = chatgptPreviews();
+      if (previews.length > 1 || (!packet.attachments.some(attachmentNamed) &&
+          !previews.some(img => img.complete && img.naturalWidth > 0)))
+        pause("ChatGPT’s source board changed before Send. Check the draft in its tab.");
+    }
     if (confirmedGeminiTiles) {
       const current = geminiAttachments();
       if (current.length !== confirmedGeminiTiles.length || current.some((tile, i) => tile !== confirmedGeminiTiles[i]))

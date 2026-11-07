@@ -6,7 +6,7 @@ require('./provider-dom.js');
 const {normalizePrompt, promptMatches, geminiControl, geminiFileInput, geminiAttachments} = globalThis.falkronaProviderDOM;
 global.getComputedStyle = () => ({visibility: 'visible'});
 
-function fixture({submitted = false, missingAttachment = false, changedPrompt = false, fresh=false, hydration=false, stale=false, videoFirst=false, ignoredFirst=false, partialUpload=false, menuDelayed=false, menuUnavailable=false, duplicatePreview=false, transientPreview=false, distinctImages=false, gemini=false, singlePicker=false, signedOut=false, lazyPicker=false, existingGeminiTiles=0, changeTilesBeforeSend=false} = {}) {
+function fixture({submitted = false, missingAttachment = false, changedPrompt = false, fresh=false, hydration=false, stale=false, videoFirst=false, ignoredFirst=false, partialUpload=false, menuDelayed=false, menuUnavailable=false, duplicatePreview=false, transientPreview=false, distinctImages=false, gemini=false, singlePicker=false, signedOut=false, lazyPicker=false, existingGeminiTiles=0, changeTilesBeforeSend=false, board=false, uploadAttempted=false} = {}) {
   let listener, clicks = 0, fetched = 0, uploads=0, clock = Date.now();
   const stages = [];
   const provider = gemini ? 'gemini' : 'chatgpt';
@@ -14,9 +14,10 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
   const packet = {provider, prompt: 'Create our ad.\n\nExact CTA: Save this for later.',
     expires_at: new Date(clock + (stale?360000:65000)).toISOString(),
     attachments: [{name: 'logo.png',data:'YQ==',mime_type:'image/png'}, {name: 'product.png',data:'YQ==',mime_type:'image/png'}]};
+  if (board) packet.attachments = [{role:'asset_board',name:'falkrona-assets.png',data:'YQ==',mime_type:'image/png'}];
   const composer = {value: '', innerText: packet.prompt.replace(/\n/g, '\n\n').replace(/ /g, '\u00a0')};
   if (changedPrompt) composer.innerText = 'Unrelated request';
-  if(fresh || existingGeminiTiles)composer.innerText='';
+  if(fresh || existingGeminiTiles || uploadAttempted)composer.innerText='';
   Object.assign(composer,{tagName:'DIV',focus(){},dispatchEvent(){}});
   const users = submitted ? [{innerText: packet.prompt}] : [];
   const image = {complete: true, naturalWidth: 1122, naturalHeight: 1402,
@@ -41,6 +42,7 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
   const result = new Promise(resolve => {resolveResult = resolve;});
   const geminiTile = () => ({getClientRects:()=>[1], getAttribute:name=>name==='aria-label'?'close attachment':null});
   const tiles = Array.from({length:existingGeminiTiles}, geminiTile);
+  const chatgptPreviews = [];
   let input;
   const makeInput=()=>({id:'upload',multiple:!singlePicker,isConnected:true,hasAttribute:()=>false,
     getAttribute:name=>name==='aria-label'?'Attach files':gemini&&name==='accept'?'image/*,video/*':null,dispatchEvent(){
@@ -52,6 +54,7 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
     else if(partialUpload){this.files=[];document.body.innerText='logo.png';}
     else if(ignoredFirst && uploads===1){this.files=[];}
     else if(hydration && uploads===1){this.isConnected=false;input=makeInput();}
+    else if(board){assert.equal(this.files.length,1);this.files=[];chatgptPreviews.push(image);}
     else document.body.innerText='logo.png product.png';
   }});
   input=makeInput();
@@ -67,6 +70,7 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
   const document = {body: {innerText: fresh?'':missingAttachment ? 'logo.png' : 'logo.png product.png'},
     execCommand(_name,_ui,text){composer.innerText=text;},
     querySelectorAll: selector => gemini && selector==='button,[role="button"]'?tiles:
+      selector==='[data-composer-attachments] img'?chatgptPreviews:
       gemini && selector.includes('[role="menuitemradio"]')?[uploadToggle,...(expanded?[signedOut?signIn:uploadMenu]:[])]:
       gemini && selector==='user-query'?users:gemini && selector==='model-response'?responses:
       gemini && selector==='input[type="file"]'?[docPicker,...(pickerMounted?[input]:[])]:
@@ -93,9 +97,28 @@ function fixture({submitted = false, missingAttachment = false, changedPrompt = 
       geminiControl: pattern => geminiControl(pattern, document), geminiFileInput: () => geminiFileInput(document),
       geminiAttachments: () => geminiAttachments(document)}
   });
-  listener({action: fresh?'generate':'resume', packet}, {}, () => {});
+  listener({action: fresh?'generate':'resume', packet, uploadAttempted}, {}, () => {});
   return {result, stages, clicks: () => clicks, fetched: () => fetched, uploads:()=>uploads, menuClicks:()=>menuClicks};
 }
+
+test('ChatGPT attaches one source board through a single-file picker and returns the finished image', async () => {
+  const f=fixture({fresh:true,board:true,singlePicker:true});
+  assert.ok((await f.result).image);
+  assert.equal(f.uploads(),1);
+  assert.equal(f.clicks(),1);
+  assert.ok(f.stages.indexOf('uploading') < f.stages.indexOf('submitted'));
+});
+
+test('ChatGPT never repeats a board upload with an uncertain outcome', async () => {
+  const f=fixture({fresh:true,board:true,ignoredFirst:true});
+  assert.match((await f.result).error,/didn’t confirm the source board/);
+  assert.equal(f.uploads(),1);
+  assert.equal(f.clicks(),0);
+  const resumed=fixture({board:true,uploadAttempted:true});
+  assert.match((await resumed.result).error,/already tried to attach/);
+  assert.equal(resumed.uploads(),0);
+  assert.equal(resumed.clicks(),0);
+});
 
 test('staged rich text with all attachments sends once and returns the matching image', async () => {
   const f = fixture();
