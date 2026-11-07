@@ -1,6 +1,8 @@
 import json
+from datetime import datetime, timezone
 from io import BytesIO
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs
 
@@ -42,6 +44,14 @@ class ErrorOpener:
         raise HTTPError(request.full_url, self.status, "rejected", {}, BytesIO(body))
 
 
+TOKEN_CHECK_TIME = datetime(2026, 11, 7, 16, 0, tzinfo=timezone.utc)
+
+
+def debug_response(**overrides):
+    metadata = {"is_valid": True, "app_id": "fixture", "type": "USER", "expires_at": 0, **overrides}
+    return [{"code": 200, "body": json.dumps({"data": metadata})}]
+
+
 class MetaTransportTests(unittest.TestCase):
     def test_extension_keeps_secrets_in_body_and_never_assumes_permanent_lifetime(self):
         transport = MetaGraphTransport(MetaConfig("app", "app-secret", "https://example.test/callback", "v26.0"))
@@ -52,8 +62,8 @@ class MetaTransportTests(unittest.TestCase):
         self.assertNotIn("user-secret", request.full_url)
         self.assertNotIn("app-secret", request.full_url)
         self.assertEqual(parse_qs(request.data.decode())["grant_type"], ["fb_exchange_token"])
-        transport._opener = Opener([{"access_token": "extended", "expires_in": 0}])
-        self.assertEqual(transport.extend_user_token("user-secret"), ("extended", 86400))
+        transport._opener = Opener([{"access_token": "extended", "expires_in": 0}, debug_response(app_id="app")])
+        self.assertEqual(transport.extend_user_token("user-secret"), ("extended", 5184000))
         for invalid in (False, True, -1, "invalid"):
             transport._opener = Opener([{"access_token": "extended", "expires_in": invalid}])
             with self.assertRaises(SocialError):
@@ -82,9 +92,13 @@ class MetaTransportTests(unittest.TestCase):
             for key in ("expires", "expires_in"):
                 for value, expected in ((5184000, 5184000), ("5183999", 5183999), (999999999, 5184000), (0, 86400)):
                     with self.subTest(method=method.__name__, key=key, value=value):
-                        opener = Opener([{"access_token": "fixture-token", key: value}])
+                        responses = [{"access_token": "fixture-token", key: value}]
+                        if value == 0 and method.__name__ == "extend_user_token":
+                            responses.append(debug_response(expires_at=int(TOKEN_CHECK_TIME.timestamp())+86400))
+                        opener = Opener(responses)
                         self.transport._opener = opener
-                        self.assertEqual(method("fixture-input"), ("fixture-token", expected))
+                        with patch("brandpilot.social.utc_now", return_value=TOKEN_CHECK_TIME):
+                            self.assertEqual(method("fixture-input"), ("fixture-token", expected))
                         self.assertNotIn("fixture-input", opener.requests[0].full_url)
                         self.assertNotIn("secret", opener.requests[0].full_url)
 
@@ -98,10 +112,55 @@ class MetaTransportTests(unittest.TestCase):
                             method("fixture-input")
                         self.assertEqual(caught.exception.code, "provider_malformed")
             for fields, expected in (({"expires_in": 3600, "expires": 5184000}, 3600),
-                                     ({"expires_in": 0, "expires": 5184000}, 86400),
+                                     ({"expires_in": 0, "expires": 5184000}, 5184000),
                                      ({"expires_at": 9999999999}, 86400)):
-                self.transport._opener = Opener([{"access_token": "fixture-token", **fields}])
-                self.assertEqual(method("fixture-input"), ("fixture-token", expected))
+                responses = [{"access_token": "fixture-token", **fields}]
+                if "expires_at" in fields and method.__name__ == "extend_user_token":
+                    responses.append(debug_response(expires_at=int(TOKEN_CHECK_TIME.timestamp())+86400))
+                self.transport._opener = Opener(responses)
+                with patch("brandpilot.social.utc_now", return_value=TOKEN_CHECK_TIME):
+                    self.assertEqual(method("fixture-input"), ("fixture-token", expected))
+
+    def test_unknown_lifetime_checks_meta_metadata_without_tokens_in_http_url(self):
+        for expiry_fields in ({}, {"expires_in": 0}, {"expires": "0"}):
+            with self.subTest(fields=expiry_fields):
+                opener = Opener([{"access_token": "inspected-token", **expiry_fields}, debug_response()])
+                self.transport._opener = opener
+                self.assertEqual(self.transport.extend_user_token("user-token"), ("inspected-token", 5184000))
+                inspect = opener.requests[1]
+                self.assertEqual(inspect.full_url, "https://graph.facebook.com/v24.0/")
+                self.assertEqual(inspect.get_method(), "POST")
+                self.assertEqual(inspect.get_header("Authorization"), "Bearer fixture|secret")
+                batch = json.loads(parse_qs(inspect.data.decode())["batch"][0])
+                self.assertEqual(batch, [{"method": "GET", "relative_url": "debug_token?input_token=inspected-token"}])
+
+    def test_verified_token_and_data_access_expiry_use_the_earliest_real_deadline(self):
+        now = int(TOKEN_CHECK_TIME.timestamp())
+        for fields, expected in (({"expires_at": now+7*86400}, 7*86400),
+                                 ({"expires_at": 0, "data_access_expires_at": now+3*86400}, 3*86400),
+                                 ({"expires_at": now+7*86400, "data_access_expires_at": now+86400}, 86400),
+                                 ({"expires_at": 0, "data_access_expires_at": 0, "type": "SYSTEM_USER"}, 5184000)):
+            self.transport._opener = Opener([{"access_token": "token"}, debug_response(**fields)])
+            with patch("brandpilot.social.utc_now", return_value=TOKEN_CHECK_TIME):
+                self.assertEqual(self.transport.extend_user_token("user"), ("token", expected))
+
+    def test_invalid_or_unverifiable_token_metadata_never_gets_a_guessed_lifetime(self):
+        for fields in ({"is_valid": False}, {"is_valid": "true"}, {"app_id": "other-app"}, {"type": "PAGE"},
+                       {"expires_at": None}, {"expires_at": True}, {"expires_at": -1},
+                       {"expires_at": "0"}, {"expires_at": 1}, {"data_access_expires_at": 1},
+                       {"data_access_expires_at": False}, {"type": []}):
+            with self.subTest(fields=fields):
+                self.transport._opener = Opener([{"access_token": "token"}, debug_response(**fields)])
+                with self.assertRaises(SocialError):
+                    self.transport.extend_user_token("user")
+        for response in ([], [None], [{"code": 200, "body": "bad-json"}],
+                         [{"code": 200, "body": "{}"}], [{"code": 400, "body": '{"error":{"code":190}}'}],
+                         [{"code": 429, "body": '{"error":{"code":4}}'}]):
+            with self.subTest(response=response):
+                self.transport._opener = Opener([{"access_token": "token"}, response])
+                with self.assertRaises(SocialError) as caught:
+                    self.transport.extend_user_token("user")
+                self.assertNotIn("inspected-token", str(caught.exception))
 
     def test_reconciliation_checks_photo_story_page_and_exact_caption(self):
         transport = MetaGraphTransport(MetaConfig("fixture", "secret", "https://example.test/callback", "v26.0"))

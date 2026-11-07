@@ -15,7 +15,7 @@ from brandpilot.models import (CredentialRecord, DesignVersion, Job, Publication
 from brandpilot.scheduled_publishing import FacebookPublicationHandler
 from brandpilot.social import SocialError
 from tests.integration import test_phase10_publication_api as fixture_module
-from tests.unit.test_social_transport import Opener
+from tests.unit.test_social_transport import Opener, debug_response
 from brandpilot.social import MetaConfig, MetaGraphTransport
 
 
@@ -290,7 +290,10 @@ def test_approval_uses_actual_meta_exchange_lifetime(case, expiry):
     response = {"access_token": "fixture-user"}
     if expiry is not None:
         response["expires"] = expiry
-    opener = Opener([response])
+    responses = [response]
+    if expiry is None:
+        responses.append(debug_response(expires_at=int(datetime.now(timezone.utc).timestamp())+86400))
+    opener = Opener(responses)
     transport._opener = opener
     case.publisher.extend_user_token = transport.extend_user_token
     with case.sessions() as session, session.begin():
@@ -298,7 +301,7 @@ def test_approval_uses_actual_meta_exchange_lifetime(case, expiry):
     result = case.client.post(case.schedule_path, headers=case.csrf, json=case.body)
     sufficient = expiry in (5184000, "5184000")
     assert result.status_code == (200 if sufficient else 409), result.text
-    assert len(opener.requests) == 1
+    assert len(opener.requests) == (2 if expiry is None else 1)
     assert not case.publisher.uploads and not case.publisher.publishes
     with case.sessions() as session:
         approvals = session.scalars(select(PublicationApproval)).all()
@@ -308,3 +311,43 @@ def test_approval_uses_actual_meta_exchange_lifetime(case, expiry):
             assert session.scalar(select(Job).where(Job.kind == "publication.facebook"))
         elif expiry is not False:
             assert "Cairo time" in result.text and "Your last post is set for" in result.text
+
+
+@pytest.mark.parametrize("expiry_fields,metadata,allowed", [
+    ({}, {}, True),
+    ({"expires_in": 0}, {}, True),
+    ({"expires": "0"}, {"expires_at": 1796662200}, True),
+    ({}, {"expires_at": 0, "data_access_expires_at": 1794329400}, True),
+    ({}, {"expires_at": 1794153000}, False),
+    ({}, {"expires_at": 0, "data_access_expires_at": 1794153000}, False),
+    ({}, {"is_valid": False}, False),
+    ({}, {"app_id": "other-app"}, False),
+])
+def test_november_seventh_can_schedule_november_eighth_using_verified_access(case, expiry_fields, metadata, allowed):
+    # Reproduce the user's exact issue: tomorrow at 19:00 exceeds the old
+    # fabricated one-day cutoff, even though Meta has not said access expires.
+    now = datetime(2026, 11, 7, 16, 50, tzinfo=timezone.utc)
+    due = datetime(2026, 11, 8, 17, 0, tzinfo=timezone.utc)  # 19:00 Cairo
+    transport = MetaGraphTransport(MetaConfig("fixture", "fixture-secret", "https://example.test/callback", "v26.0"))
+    transport._opener = Opener([{"access_token": "fixture-user", **expiry_fields}, debug_response(**metadata)])
+    case.publisher.extend_user_token = transport.extend_user_token
+    with case.sessions() as session, session.begin():
+        session.get(SocialConnection, case.connection_id).token_expires_at = now+timedelta(days=1)
+        plan = session.get(WeeklyPlan, case.plan["id"])
+        plan.week_start = now.date()-timedelta(days=now.weekday())
+        plan.items = [{**item, "scheduled_at": due.isoformat()} for item in plan.items]
+    with patch("brandpilot.social.utc_now", return_value=now), \
+         patch("brandpilot.scheduled_publishing.utc_now", return_value=now), \
+         patch("brandpilot.publication.utc_now", return_value=now):
+        result = case.client.post(case.schedule_path, headers=case.csrf, json=case.body)
+    assert result.status_code == (200 if allowed else 409), result.text
+    with case.sessions() as session:
+        approval = session.scalar(select(PublicationApproval))
+        assert bool(approval) == allowed
+        if allowed:
+            assert approval.scheduled_at_utc.replace(tzinfo=timezone.utc) == due
+            assert session.get(SocialConnection, case.connection_id).token_expires_at.replace(tzinfo=timezone.utc) > due+timedelta(hours=1)
+        else:
+            assert session.get(WeeklyPlan, case.plan["id"]).status == "draft"
+            assert not session.scalar(select(Job.id).where(Job.kind == "publication.facebook"))
+    assert not case.publisher.uploads and not case.publisher.publishes

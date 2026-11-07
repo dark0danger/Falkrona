@@ -99,7 +99,7 @@ class MetaGraphTransport:
 
     def _request(
         self, path: str, *, token: str | None = None, data: dict[str, str] | None = None,
-        params: dict[str, str] | None = None, file: bytes | None = None,
+        params: dict[str, str] | None = None, file: bytes | None = None, single_batch: bool = False,
     ) -> dict[str, Any]:
         base = f"https://graph.facebook.com/{self._config.graph_version}/{path}"
         url = f"{base}?{urlencode(params)}" if params else base
@@ -141,6 +141,21 @@ class MetaGraphTransport:
             result = json.loads(content)
         except (UnicodeDecodeError, ValueError) as exc:
             raise SocialError("provider_malformed", "Meta returned an invalid response.") from exc
+        if single_batch:
+            if (not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict)
+                or not isinstance(result[0].get("body"), str)):
+                raise SocialError("provider_malformed", "Meta did not confirm the authorization details.")
+            entry = result[0]
+            try:
+                result = json.loads(entry["body"])
+            except ValueError as exc:
+                raise SocialError("provider_malformed", "Meta returned invalid authorization details.") from exc
+            if entry.get("code") != 200 or not isinstance(result, dict) or "error" in result:
+                error = result.get("error") if isinstance(result, dict) else None
+                code = error.get("code") if isinstance(error, dict) else None
+                reason = ("needs_reauth" if code == 190 else "rate_limited" if entry.get("code") == 429
+                          or code in (4, 17, 32, 613) else "authorization_unverified")
+                raise SocialError(reason, "Facebook could not verify publishing authorization. Try again or reconnect the Page.")
         if not isinstance(result, dict) or "error" in result:
             raise SocialError("provider_error", "Meta rejected the request.")
         return result
@@ -158,10 +173,10 @@ class MetaGraphTransport:
         token = result.get("access_token")
         if not isinstance(token, str) or not token.strip():
             raise SocialError("provider_malformed", "Meta did not return an access token.")
-        return token, self._token_lifetime(result)
+        return token, self._token_lifetime(result) or UNKNOWN_META_TOKEN_LIFETIME_SECONDS
 
     @staticmethod
-    def _token_lifetime(result: dict[str, Any]) -> int:
+    def _token_lifetime(result: dict[str, Any]) -> int | None:
         # Meta's OAuth endpoint uses both expires and expires_in for durations
         # in seconds. Never confuse either with an absolute expires_at timestamp.
         lifetimes = []
@@ -173,9 +188,38 @@ class MetaGraphTransport:
                 expiry = int(expiry)
             if isinstance(expiry, bool) or not isinstance(expiry, int) or expiry < 0:
                 raise SocialError("provider_malformed", "Meta returned an invalid token lifetime.")
-            # Zero/unknown remains bounded; it is not proof of permanent access.
-            lifetimes.append(expiry or UNKNOWN_META_TOKEN_LIFETIME_SECONDS)
-        return min(min(lifetimes, default=UNKNOWN_META_TOKEN_LIFETIME_SECONDS), MAX_META_TOKEN_LIFETIME_SECONDS)
+            if expiry:
+                lifetimes.append(expiry)
+        return min(min(lifetimes), MAX_META_TOKEN_LIFETIME_SECONDS) if lifetimes else None
+
+    def _verified_user_token_lifetime(self, token: str) -> int:
+        # A Graph batch carries the nested GET parameters in the POST body, so
+        # neither the inspected token nor the app secret enters an HTTP URL.
+        result = self._request("", token=f"{self._config.app_id}|{self._config.app_secret}",
+            data={"batch": json.dumps([{"method": "GET", "relative_url": "debug_token?" +
+                urlencode({"input_token": token})}])}, single_batch=True)
+        metadata = result.get("data")
+        if not isinstance(metadata, dict):
+            raise SocialError("authorization_unverified", "Facebook did not confirm the authorization expiry. Try again.")
+        if (metadata.get("is_valid") is not True or metadata.get("app_id") != self._config.app_id
+            or metadata.get("type") not in ("USER", "SYSTEM_USER")):
+            raise SocialError("needs_reauth", "Facebook authorization is invalid. Reconnect the Page.")
+        now = utc_now().timestamp()
+        deadlines = []
+        for field in ("expires_at", "data_access_expires_at"):
+            value = metadata.get(field)
+            if value is None and field == "data_access_expires_at":
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise SocialError("authorization_unverified", "Facebook did not confirm the authorization expiry. Try again.")
+            if value:
+                deadlines.append(value)
+        remaining = int(min(deadlines) - now) if deadlines else MAX_META_TOKEN_LIFETIME_SECONDS
+        if remaining <= 0:
+            raise SocialError("needs_reauth", "Facebook authorization has expired. Reconnect the Page.")
+        # An explicitly valid, zero-expiry token is rechecked at publication and
+        # still bounded locally; missing expiry metadata never gets this allowance.
+        return min(remaining, MAX_META_TOKEN_LIFETIME_SECONDS)
 
     @staticmethod
     def _write_id(value: Any) -> str:
@@ -190,7 +234,8 @@ class MetaGraphTransport:
         extended = result.get("access_token")
         if not isinstance(extended, str) or not extended.strip():
             raise SocialError("provider_malformed", "Meta did not return a refreshed authorization.")
-        return extended, self._token_lifetime(result)
+        lifetime = self._token_lifetime(result)
+        return extended, lifetime if lifetime is not None else self._verified_user_token_lifetime(extended)
 
     def upload_photo(self, page_id: str, token: str, content: bytes) -> str:
         self._write_id(page_id)
