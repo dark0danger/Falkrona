@@ -77,6 +77,32 @@ class MetaTransportTests(unittest.TestCase):
             self.assertNotIn("private-token", request.full_url)
             self.assertEqual(request.get_header("Authorization"), "Bearer private-token")
 
+    def test_oauth_lifetime_accepts_both_meta_duration_fields(self):
+        for method in (self.transport.exchange_code, self.transport.extend_user_token):
+            for key in ("expires", "expires_in"):
+                for value, expected in ((5184000, 5184000), ("5183999", 5183999), (999999999, 5184000), (0, 86400)):
+                    with self.subTest(method=method.__name__, key=key, value=value):
+                        opener = Opener([{"access_token": "fixture-token", key: value}])
+                        self.transport._opener = opener
+                        self.assertEqual(method("fixture-input"), ("fixture-token", expected))
+                        self.assertNotIn("fixture-input", opener.requests[0].full_url)
+                        self.assertNotIn("secret", opener.requests[0].full_url)
+
+    def test_oauth_lifetime_rejects_malformed_aliases_and_uses_shorter_bound(self):
+        for method in (self.transport.exchange_code, self.transport.extend_user_token):
+            for key in ("expires", "expires_in"):
+                for invalid in (False, True, -1, 1.5, "invalid", "9" * 1000):
+                    with self.subTest(method=method.__name__, key=key, invalid=invalid):
+                        self.transport._opener = Opener([{"access_token": "fixture-token", key: invalid}])
+                        with self.assertRaises(SocialError) as caught:
+                            method("fixture-input")
+                        self.assertEqual(caught.exception.code, "provider_malformed")
+            for fields, expected in (({"expires_in": 3600, "expires": 5184000}, 3600),
+                                     ({"expires_in": 0, "expires": 5184000}, 86400),
+                                     ({"expires_at": 9999999999}, 86400)):
+                self.transport._opener = Opener([{"access_token": "fixture-token", **fields}])
+                self.assertEqual(method("fixture-input"), ("fixture-token", expected))
+
     def test_reconciliation_checks_photo_story_page_and_exact_caption(self):
         transport = MetaGraphTransport(MetaConfig("fixture", "secret", "https://example.test/callback", "v26.0"))
         transport._opener = Opener([{"page_story_id": "12345_901"}, {"id": "12345_901", "message": "Approved"}])

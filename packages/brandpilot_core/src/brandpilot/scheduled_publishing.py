@@ -67,7 +67,12 @@ class ScheduledPublishing:
         extended, lifetime = self.social._transport.extend_user_token(token)
         expiry = utc_now() + timedelta(seconds=lifetime)
         if expiry <= through + timedelta(hours=1):
-            raise PublicationError("authorization_too_short", "Facebook did not authorize the full schedule. Reconnect the Page or choose earlier posting times.")
+            cairo = ZoneInfo("Africa/Cairo")
+            deadline = (expiry - timedelta(hours=1)).astimezone(cairo).strftime("%d %b %Y, %H:%M")
+            last_post = through.astimezone(cairo).strftime("%d %b %Y, %H:%M")
+            raise PublicationError("authorization_too_short",
+                f"Facebook access only covers posting times before {deadline} (Cairo time). "
+                f"Your last post is set for {last_post}. Choose earlier times or renew Facebook access.")
         scopes = self.social._transport.granted_permissions(extended)
         page = next((page for page in self.social._transport.managed_pages(extended)
                      if page.get("id") == connection.account_id), None)

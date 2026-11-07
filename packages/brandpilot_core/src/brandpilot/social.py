@@ -156,17 +156,26 @@ class MetaGraphTransport:
             },
         )
         token = result.get("access_token")
-        expiry = result.get("expires_in")
         if not isinstance(token, str) or not token.strip():
             raise SocialError("provider_malformed", "Meta did not return an access token.")
-        if isinstance(expiry, str) and len(expiry) <= 10 and expiry.isascii() and expiry.isdecimal():
-            expiry = int(expiry)
-        if expiry is None or expiry == 0:
-            # An omitted/zero provider lifetime is never treated as permanent.
-            expiry = UNKNOWN_META_TOKEN_LIFETIME_SECONDS
-        if isinstance(expiry, bool) or not isinstance(expiry, int) or expiry < 0:
-            raise SocialError("provider_malformed", "Meta returned an invalid token lifetime.")
-        return token, min(expiry, MAX_META_TOKEN_LIFETIME_SECONDS)
+        return token, self._token_lifetime(result)
+
+    @staticmethod
+    def _token_lifetime(result: dict[str, Any]) -> int:
+        # Meta's OAuth endpoint uses both expires and expires_in for durations
+        # in seconds. Never confuse either with an absolute expires_at timestamp.
+        lifetimes = []
+        for key in ("expires_in", "expires"):
+            expiry = result.get(key)
+            if expiry is None:
+                continue
+            if isinstance(expiry, str) and len(expiry) <= 10 and expiry.isascii() and expiry.isdecimal():
+                expiry = int(expiry)
+            if isinstance(expiry, bool) or not isinstance(expiry, int) or expiry < 0:
+                raise SocialError("provider_malformed", "Meta returned an invalid token lifetime.")
+            # Zero/unknown remains bounded; it is not proof of permanent access.
+            lifetimes.append(expiry or UNKNOWN_META_TOKEN_LIFETIME_SECONDS)
+        return min(min(lifetimes, default=UNKNOWN_META_TOKEN_LIFETIME_SECONDS), MAX_META_TOKEN_LIFETIME_SECONDS)
 
     @staticmethod
     def _write_id(value: Any) -> str:
@@ -178,19 +187,10 @@ class MetaGraphTransport:
         result = self._request("oauth/access_token", data={"grant_type": "fb_exchange_token",
             "client_id": self._config.app_id, "client_secret": self._config.app_secret,
             "fb_exchange_token": token})
-        extended, expiry = result.get("access_token"), result.get("expires_in")
-        if isinstance(expiry, str) and len(expiry) <= 10 and expiry.isascii() and expiry.isdecimal():
-            expiry = int(expiry)
+        extended = result.get("access_token")
         if not isinstance(extended, str) or not extended.strip():
             raise SocialError("provider_malformed", "Meta did not return a refreshed authorization.")
-        if isinstance(expiry, bool):
-            raise SocialError("provider_malformed", "Meta returned an invalid refreshed lifetime.")
-        # Unknown/zero lifetime remains bounded, never assumed permanent.
-        if expiry in (None, 0):
-            expiry = UNKNOWN_META_TOKEN_LIFETIME_SECONDS
-        if not isinstance(expiry, int) or expiry < 0:
-            raise SocialError("provider_malformed", "Meta returned an invalid refreshed lifetime.")
-        return extended, min(expiry, MAX_META_TOKEN_LIFETIME_SECONDS)
+        return extended, self._token_lifetime(result)
 
     def upload_photo(self, page_id: str, token: str, content: bytes) -> str:
         self._write_id(page_id)
