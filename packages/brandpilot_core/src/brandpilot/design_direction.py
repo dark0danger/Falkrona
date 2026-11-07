@@ -88,6 +88,23 @@ def direction_schema():
     return schema
 
 
+ARTWORK_COPY_RULE = (
+    "The headline and CTA are the only advertising text allowed on the image. "
+    "Keep the caption in the social post, separate from the artwork. Omit subtitles, "
+    "body copy, badges, placeholder text and repeated brand names. Preserve the original "
+    "lettering already present in the supplied logo and on the actual product label."
+)
+ARTWORK_STYLE_RULE = (
+    "Use the exact supplied logo once as a small corner signature, within a 12% canvas width "
+    "by 9% canvas height box (130 by 120 px at 1080 by 1350). Keep its proportions and clear space. "
+    "Use the brand's display typography for the headline, with a distinct silhouette, "
+    "deliberate weight, balanced line breaks and generous spacing. Avoid a generic system font. "
+    "For Arabic, choose a display face with native Arabic forms that fits the brand. "
+    "For a bold geometric brand, use a contemporary Kufi-inspired face. Join letters correctly, "
+    "read right to left, align right and break only between words. Keep the fixed CTA treatment."
+)
+
+
 SYSTEM = """You are Falkrona's creative director running inside Hermes. Write a detailed
 image-generation prompt for a COMPLETE Facebook/Instagram ad, to be executed by
 Gemini Apps or ChatGPT in the owner's authorized browser. You plan; the image app
@@ -150,7 +167,7 @@ Return a complete self-contained image_prompt that includes exact headline/CTA
 and attachment roles. Do not return geometry, segmentation or a scene_recipe.
 Do not generate, publish, call tools or claim visual review. Return ONLY JSON
 matching the supplied structured response schema.
-"""
+""" + "\n" + ARTWORK_COPY_RULE + "\n" + ARTWORK_STYLE_RULE
 
 SKILL_PATH = Path(__file__).resolve().parents[4] / "infra/hermes/skills/social-media-graphic-design/SKILL.md"
 
@@ -165,15 +182,14 @@ def model_context(value):
     return value
 
 
-def saved_skill_hash(prompt, editorial_version):
-    if editorial_version is None:
-        # A prepared older request is bound to the skill it actually used.
-        try:
-            value = json.loads(prompt.rsplit("\nBusiness context:\n", 1)[1]).get("skill_sha256")
-            if isinstance(value, str) and len(value) == 64:
-                return value
-        except (IndexError, ValueError, AttributeError):
-            pass
+def saved_skill_hash(prompt):
+    # Keep each run bound to the creative skill it actually used.
+    try:
+        value = json.loads(prompt.rsplit("\nBusiness context:\n", 1)[1]).get("skill_sha256")
+        if isinstance(value, str) and len(value) == 64:
+            return value
+    except (IndexError, ValueError, AttributeError):
+        pass
     return None
 
 
@@ -318,7 +334,7 @@ def resolve_direction(session, workspace_id, design_id, run_id, inputs, storage)
         raise CreativeError("direction_unavailable", "Wait for this design's Gemini direction to complete.")
     _, digest = context_snapshot(session, workspace_id, design_id, inputs, storage,
                                  editorial_version=row.checkpoint.get("editorial_version"),
-                                 skill_hash=saved_skill_hash(row.redacted_prompt, row.checkpoint.get("editorial_version")))
+                                 skill_hash=saved_skill_hash(row.redacted_prompt))
     if digest != row.checkpoint.get("context_digest"):
         raise CreativeError("direction_stale", "The brand, product, preferences or design inputs changed. Prepare a new direction.")
     try:

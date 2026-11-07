@@ -303,7 +303,7 @@ class CreativeDirectionHandler:
                     set_workspace_context(session, workspace)
                     _, digest = context_snapshot(session, workspace, checkpoint["design_id"], checkpoint["inputs"], self.phase4._storage,
                                                  editorial_version=checkpoint.get("editorial_version"),
-                                                 skill_hash=saved_skill_hash(prompt, checkpoint.get("editorial_version")))
+                                                 skill_hash=saved_skill_hash(prompt))
                     if digest != checkpoint["context_digest"]:
                         raise Phase4Error("direction_stale", "Your brand, product or brief changed; prepare a new direction.")
                 validated.update(renderer="browser_image_app", image_api_calls=0)

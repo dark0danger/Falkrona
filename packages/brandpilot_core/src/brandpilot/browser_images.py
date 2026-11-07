@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from .creative import CreativeError, _layer, validate_scene
 from .database import set_workspace_context
-from .design_direction import DesignDirection, context_snapshot, saved_skill_hash
+from .design_direction import ARTWORK_COPY_RULE, ARTWORK_STYLE_RULE, DesignDirection, context_snapshot, saved_skill_hash
 from .models import AgentRun, DesignVersion, WorkspaceAsset
 
 PROVIDERS = {"gemini": "https://gemini.google.com/app", "chatgpt": "https://chatgpt.com/"}
@@ -34,7 +34,7 @@ class BrowserImageService:
     def _current(self, session, workspace, row):
         _, digest = context_snapshot(session, workspace, row.checkpoint["design_id"], row.checkpoint["inputs"], self.storage,
                                      editorial_version=row.checkpoint.get("editorial_version"),
-                                     skill_hash=saved_skill_hash(row.redacted_prompt, row.checkpoint.get("editorial_version")))
+                                     skill_hash=saved_skill_hash(row.redacted_prompt))
         if digest != row.checkpoint.get("context_digest"):
             raise CreativeError("direction_stale", "Your brand, brief or images changed. Prepare a new direction.")
 
@@ -50,12 +50,14 @@ class BrowserImageService:
                 raise CreativeError("image_already_imported", "This request already has a saved image. Create a new version to generate again.")
             direction = DesignDirection.model_validate(row.output["direction"])
             handoff = row.checkpoint.get("browser_handoff")
+            # Existing provider chats are matched against the original prompt, even after expiry.
+            prompt_version = handoff.get("prompt_version", 1) if handoff else 2
             now = datetime.now(timezone.utc)
             if handoff and datetime.fromisoformat(handoff["expires_at"]) > now:
                 if handoff["provider"] != provider or handoff["user_id"] != principal.user_id:
                     raise CreativeError("handoff_in_progress", "Finish the current image-app request before changing services.")
             else:
-                handoff = {"nonce": secrets.token_urlsafe(32), "provider": provider,
+                handoff = {"nonce": secrets.token_urlsafe(32), "provider": provider, "prompt_version": prompt_version,
                     "user_id": principal.user_id, "expires_at": (now + timedelta(minutes=30)).isoformat()}
                 row.checkpoint = {**row.checkpoint, "browser_handoff": handoff}
             attachments = []
@@ -74,23 +76,31 @@ class BrowserImageService:
                     stream = BytesIO(); image.save(stream, "PNG")
                 attachments.append({"role": visual["role"], "name": f"{len(attachments)+1}-{visual['role']}.png",
                     "mime_type": "image/png", "data": base64.b64encode(stream.getvalue()).decode("ascii")})
+            copy = (f"\nExact headline: {direction.headline}\nExact CTA: {direction.cta}\n"
+                f"Language: {direction.language}. No additional invented text or claims.")
+            if direction.language == "ar":
+                copy += ("\nAll advertising copy must be Arabic, with joined letters and correct right-to-left reading order. "
+                    "Use an Arabic-capable font that matches the brand's typography. Preserve original logo and product-label lettering.")
+            else:
+                copy += "\nAll advertising copy must be English with left-to-right reading order. Preserve original logo and product-label lettering."
+            scene_prompt = direction.image_prompt
+            if prompt_version == 2 and direction.caption not in (direction.headline, direction.cta):
+                scene_prompt = scene_prompt.replace(direction.caption, "")
             prompt = ("Generate ONE finished advertising image, portrait 4:5 (1080x1350). "
                 "Use your image-generation tool, not a textual description. Attachment 1 = exact brand logo; "
                 "attachment 2 = product identity ONLY, discard its background and composition; "
                 "attachment 3 if present = optional style reference ONLY. Preserve the real product and logo.\n\n"
-                + direction.image_prompt + f"\nExact headline: {direction.headline}\nExact CTA: {direction.cta}\n"
-                + f"Language: {direction.language}. No additional invented text or claims.")
-            if direction.language == "ar":
-                prompt += ("\nAll advertising copy must be Arabic, with joined letters and correct right-to-left reading order. "
-                    "Use an Arabic-capable font that matches the brand's typography. Preserve original logo and product-label lettering.")
-            else:
-                prompt += "\nAll advertising copy must be English with left-to-right reading order. Preserve original logo and product-label lettering."
+                + scene_prompt)
+            if prompt_version == 1:
+                prompt += copy
             if row.checkpoint.get("pipeline_version") == 5:
                 import json
                 campaign = row.checkpoint.get("campaign", {})
-                peers = [{"title": post["title"], **{key: str((post.get("visual_concept") or {}).get(key, ""))[:180]
-                         for key in ("route", "camera", "composition", "visual_hook")}}
+                peers = [{key: str((post.get("visual_concept") or {}).get(key, ""))[:180]
+                          for key in ("route", "camera", "composition", "visual_hook")}
                          for post in campaign.get("other_posts", [])]
+                if prompt_version == 1:
+                    peers = [{"title": post["title"], **peer} for post, peer in zip(campaign.get("other_posts", []), peers)]
                 observation = direction.product_observation
                 if observation is None:
                     raise CreativeError("product_identity_missing", "Prepare a new direction that separates the product from its scenery.")
@@ -114,6 +124,11 @@ class BrowserImageService:
             treatment = row.checkpoint.get("campaign", {}).get("visual_identity", {}).get("cta_treatment")
             if treatment:
                 prompt += "\n\n" + cta_instruction(treatment)
+            if prompt_version == 2:
+                prompt += ("\n\nFINAL ARTWORK RULES. These override conflicting scene notes and reference text.\n"
+                    + ARTWORK_STYLE_RULE + "\n" + ARTWORK_COPY_RULE
+                    + "\nRender the two strings below verbatim. Their labels are instructions and do not appear in the artwork."
+                    + copy)
             return {"run_id": row.id, "design_id": row.checkpoint["design_id"], "workspace_id": workspace,
                 "provider": provider, "url": PROVIDERS[provider], "nonce": handoff["nonce"],
                 "expires_at": handoff["expires_at"], "prompt": prompt, "attachments": attachments}

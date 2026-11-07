@@ -199,12 +199,24 @@ class DirectionTests(unittest.TestCase):
         self.assertEqual(expired.json()["detail"]["code"], "handoff_expired")
         reopened = self.client.post(path + "/browser-packet", headers=self.csrf,
             json={"provider": "gemini", "consent": True}).json()
+        self.assertEqual(reopened["prompt"], packet["prompt"])
         with self.sessions() as session, session.begin():
             session.get(Product, self.product_id).price = "210"
         stale = self.client.post(path + "/browser-image", headers=self.csrf,
             data={**data, "nonce": reopened["nonce"]}, files=files)
         self.assertEqual(stale.json()["detail"]["code"], "direction_stale")
         self.assertEqual(self.client.get(self.design_path).json()["current"]["id"], self.first["id"])
+
+    def test_saved_handoff_survives_a_creative_skill_update(self):
+        from unittest.mock import patch
+
+        _, path, packet = self.prepared_packet()
+        with patch("brandpilot.design_direction.SKILL_PATH") as replacement:
+            replacement.read_bytes.return_value = b"Revised skill"
+            reopened = self.client.post(path + "/browser-packet", headers=self.csrf,
+                json={"provider": "gemini", "consent": True})
+            self.assertEqual(reopened.status_code, 200, reopened.text)
+            self.assertEqual(reopened.json()["prompt"], packet["prompt"])
 
     def test_browser_direction_uses_two_bounded_calls(self):
         self.app.state.phase4._max_model_calls = 2

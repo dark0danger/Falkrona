@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from .design_direction import ARTWORK_COPY_RULE, ARTWORK_STYLE_RULE
 from .phase4 import Phase4Error
 
 
@@ -37,7 +38,7 @@ def review_prompt(prompt: str, draft: dict, kind: str) -> str:
              "Keep the brand palette, typography, logo and CTA style/position fixed. "
              "Product photos supply packaging identity only, never the setting or composition. "
              "Correct the complete image_prompt to use the exact final headline and CTA verbatim, "
-             "with clear mobile typography and no other invented advertising text. "
+             "with clear mobile typography. " + ARTWORK_COPY_RULE + " " + ARTWORK_STYLE_RULE + " "
              "Do not add scene_recipe.\n") +
             "\nBusiness context:\n" + context + "\nDraft to edit:\n" + json.dumps(draft, ensure_ascii=False))
 

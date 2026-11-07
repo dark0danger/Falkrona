@@ -82,7 +82,8 @@ class WeekFlowTests(unittest.TestCase):
         captured=[]; imported_posts=[]
         for index,entry in enumerate(entries):
             direction=deepcopy(direction_fixture.DIRECTION)
-            direction['image_prompt']=self.content()['posts'][index]['visual_concept']['scene']+' Headline: '+direction['headline']+' CTA: '+direction['cta']
+            direction['image_prompt']=(self.content()['posts'][index]['visual_concept']['scene']
+                +' Headline: '+direction['headline']+' CTA: '+direction['cta']+' Subtitle: '+direction['caption'])
             self.execute(lambda prompt,*_:captured.append(prompt) or {"text":json.dumps(direction),"model_calls":1})
             runpath=f"{self.base}/agent-runs/{entry['run_id']}"
             packet=self.client.post(runpath+'/browser-packet',headers=self.csrf,json={"provider":"chatgpt","consent":True}).json()
@@ -136,9 +137,18 @@ class WeekFlowTests(unittest.TestCase):
             self.assertEqual(self.client.get(runpath).json()['status'],'completed')
             packet=self.client.post(runpath+'/browser-packet',headers=self.csrf,json={"provider":"chatgpt","consent":True})
             self.assertEqual(packet.status_code,200,packet.text)
-            self.assertIn('Exact headline: قهوتك كل صباح',packet.json()['prompt'])
-            self.assertIn('Language: ar',packet.json()['prompt'])
-            self.assertIn('right-to-left',packet.json()['prompt'])
+            prompt=packet.json()['prompt']
+            self.assertNotIn(direction['caption'],prompt)
+            self.assertIn('FIXED BRAND CTA',prompt)
+            scene, artwork=prompt.split('FINAL ARTWORK RULES',1)
+            self.assertIn(self.content()['posts'][index]['visual_concept']['scene'],scene)
+            self.assertIn('12% canvas width by 9% canvas height',artwork)
+            self.assertIn('Kufi-inspired',artwork)
+            self.assertIn('Omit subtitles',artwork)
+            self.assertIn('Exact headline: قهوتك كل صباح',artwork)
+            self.assertIn('Exact CTA: اكتشف قهوتك',artwork)
+            self.assertIn('Language: ar',artwork)
+            self.assertIn('right-to-left',artwork)
         changed=self.client.post(path+'/generate-images',headers=self.csrf,json={**body,'language':'en'})
         self.assertEqual(changed.status_code,422,changed.text)
         self.assertEqual(changed.json()['detail']['code'],'generation_started')
